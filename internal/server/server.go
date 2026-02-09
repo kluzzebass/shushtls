@@ -5,9 +5,11 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -16,13 +18,16 @@ import (
 	"shushtls/internal/ui"
 )
 
-// Server is the main ShushTLS application server. It inspects the
-// certificate engine state on startup and serves either HTTP or HTTPS
-// accordingly. It never serves both simultaneously.
+// Server is the main ShushTLS application server. It always starts an HTTP
+// listener. When the certificate engine reaches Ready state (either at
+// startup or after initialization), it also starts HTTPS and switches HTTP
+// to redirect mode. No restart required.
 type Server struct {
-	config Config
-	engine *certengine.Engine
-	logger *slog.Logger
+	config    Config
+	engine    *certengine.Engine
+	logger    *slog.Logger
+	readyCh   chan struct{} // closed when engine transitions to Ready
+	readyOnce sync.Once
 }
 
 // New creates a new Server with the given configuration.
@@ -43,9 +48,10 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	return &Server{
-		config: cfg,
-		engine: engine,
-		logger: logger,
+		config:  cfg,
+		engine:  engine,
+		logger:  logger,
+		readyCh: make(chan struct{}),
 	}, nil
 }
 
@@ -55,86 +61,142 @@ func (s *Server) Engine() *certengine.Engine {
 	return s.engine
 }
 
-// Run starts the server in the appropriate mode based on the certificate
-// engine state, and blocks until shutdown.
-//
-// - Uninitialized or Initialized: HTTP-only mode (setup/trust installation)
-// - Ready: HTTPS-only mode (normal operation)
+// notifyReady signals that the engine has reached Ready state. Safe to
+// call multiple times — only the first call has any effect.
+func (s *Server) notifyReady() {
+	s.readyOnce.Do(func() {
+		close(s.readyCh)
+	})
+}
+
+// Run starts the server and blocks until shutdown. HTTP always starts
+// immediately. If the engine is already Ready, HTTPS starts too and HTTP
+// redirects. If not, HTTP serves the setup UI until initialization
+// completes, then HTTPS activates automatically.
 //
 // The server shuts down gracefully on SIGINT or SIGTERM.
 func (s *Server) Run(ctx context.Context) error {
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	state := s.engine.State()
 	s.logger.Info("ShushTLS starting",
 		"state", state.String(),
 		"stateDir", s.config.StateDir,
 	)
 
-	switch state {
-	case certengine.Uninitialized, certengine.Initialized:
-		return s.runHTTP(ctx)
-	case certengine.Ready:
-		return s.runHTTPS(ctx)
-	default:
-		return fmt.Errorf("unexpected engine state: %s", state)
-	}
-}
-
-// runHTTP starts an HTTP-only server for the setup/initialization flow.
-// This is used before the root CA exists or before the service cert is ready.
-func (s *Server) runHTTP(ctx context.Context) error {
 	mux, err := s.buildMux()
 	if err != nil {
 		return err
 	}
 
-	srv := &http.Server{
+	// HTTP always runs. In setup mode it serves the full app; after
+	// HTTPS activates it switches to redirecting.
+	httpHandler := &switchableHandler{handler: mux}
+	httpSrv := &http.Server{
 		Addr:              s.config.HTTPAddr,
-		Handler:           mux,
+		Handler:           httpHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	s.logger.Info("serving HTTP (setup mode)",
-		"addr", s.config.HTTPAddr,
-		"hint", "initialize via the web UI or POST /api/initialize",
-	)
+	errCh := make(chan error, 2)
 
-	return s.serve(ctx, srv)
-}
+	go func() {
+		s.logger.Info("serving HTTP", "addr", s.config.HTTPAddr)
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("HTTP server: %w", err)
+		}
+	}()
 
-// runHTTPS starts an HTTPS-only server using the ShushTLS service certificate.
-// This is the normal operating mode after initialization and trust installation.
-func (s *Server) runHTTPS(ctx context.Context) error {
-	mux, err := s.buildMux()
-	if err != nil {
-		return err
+	var httpsSrv *http.Server
+
+	if state == certengine.Ready {
+		// Already initialized — start HTTPS immediately, HTTP redirects.
+		httpHandler.Switch(s.httpsRedirectHandler())
+		httpsSrv, err = s.startHTTPS(mux, errCh)
+		if err != nil {
+			httpSrv.Close()
+			return err
+		}
+	} else {
+		s.logger.Info("setup mode — initialize via the web UI or POST /api/initialize",
+			"httpAddr", s.config.HTTPAddr,
+		)
+
+		// Wait for initialization or early exit.
+		select {
+		case err := <-errCh:
+			return err
+		case <-ctx.Done():
+			return s.shutdownAll(httpSrv, nil)
+		case <-s.readyCh:
+			s.logger.Info("initialization complete, activating HTTPS")
+			httpsSrv, err = s.startHTTPS(mux, errCh)
+			if err != nil {
+				s.logger.Error("failed to start HTTPS, continuing HTTP only", "error", err)
+			} else {
+				httpHandler.Switch(s.httpsRedirectHandler())
+				s.logger.Info("HTTP now redirects to HTTPS", "httpsAddr", s.config.HTTPSAddr)
+			}
+		}
 	}
 
+	// Wait for shutdown signal or server error.
+	select {
+	case err := <-errCh:
+		s.shutdownAll(httpSrv, httpsSrv)
+		return err
+	case <-ctx.Done():
+		return s.shutdownAll(httpSrv, httpsSrv)
+	}
+}
+
+// startHTTPS creates and starts the HTTPS server in the background.
+// Errors from the listener are sent to errCh.
+func (s *Server) startHTTPS(handler http.Handler, errCh chan<- error) (*http.Server, error) {
 	certPath, keyPath := s.engine.Store().CertPaths(s.engine.ServiceHost())
 
 	tlsCert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
-		return fmt.Errorf("load TLS certificate: %w", err)
-	}
-
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{tlsCert},
-		MinVersion:   tls.VersionTLS12,
+		return nil, fmt.Errorf("load TLS certificate: %w", err)
 	}
 
 	srv := &http.Server{
-		Addr:              s.config.HTTPSAddr,
-		Handler:           mux,
-		TLSConfig:         tlsConfig,
+		Addr:    s.config.HTTPSAddr,
+		Handler: handler,
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{tlsCert},
+			MinVersion:   tls.VersionTLS12,
+		},
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	s.logger.Info("serving HTTPS (normal mode)",
-		"addr", s.config.HTTPSAddr,
-		"serviceHost", s.engine.ServiceHost(),
-	)
+	go func() {
+		s.logger.Info("serving HTTPS", "addr", s.config.HTTPSAddr, "serviceHost", s.engine.ServiceHost())
+		if err := srv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("HTTPS server: %w", err)
+		}
+	}()
 
-	// TLSConfig is already set, so pass empty cert/key paths.
-	return s.serveTLS(ctx, srv)
+	return srv, nil
+}
+
+// httpsRedirectHandler returns a handler that 301-redirects all requests
+// to the HTTPS equivalent, rewriting the port if needed.
+func (s *Server) httpsRedirectHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		// Strip the HTTP port.
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		// Add the HTTPS port if non-standard.
+		if _, port, _ := net.SplitHostPort(s.config.HTTPSAddr); port != "" && port != "443" {
+			host = net.JoinHostPort(host, port)
+		}
+		target := "https://" + host + r.URL.RequestURI()
+		http.Redirect(w, r, target, http.StatusMovedPermanently)
+	})
 }
 
 // buildMux constructs the HTTP router with API and UI routes.
@@ -142,7 +204,7 @@ func (s *Server) buildMux() (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 
 	// Register API endpoints.
-	apiHandler := api.NewHandler(s.engine, s.config.ServiceHosts, s.logger)
+	apiHandler := api.NewHandler(s.engine, s.config.ServiceHosts, s.logger, s.notifyReady)
 	apiHandler.Register(mux)
 
 	// Catch-all for unmatched /api/ paths — return proper JSON errors
@@ -163,52 +225,45 @@ func (s *Server) buildMux() (*http.ServeMux, error) {
 	return mux, nil
 }
 
-// serve runs an HTTP server with graceful shutdown on context cancellation
-// or OS signal.
-func (s *Server) serve(ctx context.Context, srv *http.Server) error {
-	return s.listenAndShutdown(ctx, srv, func() error {
-		return srv.ListenAndServe()
-	})
-}
+// shutdownAll gracefully shuts down both HTTP and HTTPS servers.
+func (s *Server) shutdownAll(httpSrv, httpsSrv *http.Server) error {
+	s.logger.Info("shutting down gracefully...")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-// serveTLS runs an HTTPS server with graceful shutdown.
-func (s *Server) serveTLS(ctx context.Context, srv *http.Server) error {
-	return s.listenAndShutdown(ctx, srv, func() error {
-		// TLSConfig is pre-configured on the server, so pass empty strings.
-		return srv.ListenAndServeTLS("", "")
-	})
-}
-
-// listenAndShutdown is the common shutdown orchestration for both HTTP
-// and HTTPS modes.
-func (s *Server) listenAndShutdown(ctx context.Context, srv *http.Server, listenFn func() error) error {
-	// Merge the parent context with OS signals for shutdown.
-	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	errCh := make(chan error, 1)
-	go func() {
-		if err := listenFn(); err != nil && err != http.ErrServerClosed {
-			errCh <- err
+	var firstErr error
+	if httpSrv != nil {
+		if err := httpSrv.Shutdown(ctx); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("HTTP shutdown: %w", err)
 		}
-		close(errCh)
-	}()
-
-	// Wait for shutdown signal or listen error.
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return fmt.Errorf("server error: %w", err)
-		}
-	case <-ctx.Done():
-		s.logger.Info("shutting down gracefully...")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("shutdown error: %w", err)
-		}
-		s.logger.Info("shutdown complete")
 	}
+	if httpsSrv != nil {
+		if err := httpsSrv.Shutdown(ctx); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("HTTPS shutdown: %w", err)
+		}
+	}
+	s.logger.Info("shutdown complete")
+	return firstErr
+}
 
-	return nil
+// switchableHandler wraps an http.Handler and allows it to be atomically
+// replaced at runtime. Used to switch HTTP from serving the full app
+// to redirecting after HTTPS activates.
+type switchableHandler struct {
+	mu      sync.RWMutex
+	handler http.Handler
+}
+
+func (sh *switchableHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	sh.mu.RLock()
+	h := sh.handler
+	sh.mu.RUnlock()
+	h.ServeHTTP(w, r)
+}
+
+// Switch atomically replaces the underlying handler.
+func (sh *switchableHandler) Switch(h http.Handler) {
+	sh.mu.Lock()
+	sh.handler = h
+	sh.mu.Unlock()
 }

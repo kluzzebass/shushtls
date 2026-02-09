@@ -22,14 +22,18 @@ type Handler struct {
 	engine       *certengine.Engine
 	serviceHosts []string
 	logger       *slog.Logger
+	onReady      func() // called when initialization reaches Ready state
 }
 
 // NewHandler creates an API handler backed by the given engine.
-func NewHandler(engine *certengine.Engine, serviceHosts []string, logger *slog.Logger) *Handler {
+// The onReady callback is invoked when initialization completes and the
+// engine reaches Ready state. It may be nil.
+func NewHandler(engine *certengine.Engine, serviceHosts []string, logger *slog.Logger, onReady func()) *Handler {
 	return &Handler{
 		engine:       engine,
 		serviceHosts: serviceHosts,
 		logger:       logger,
+		onReady:      onReady,
 	}
 }
 
@@ -162,7 +166,7 @@ func (h *Handler) handleInitialize(w http.ResponseWriter, r *http.Request) {
 	var msg string
 	switch state {
 	case certengine.Ready:
-		msg = "Initialization complete. Download the root CA, install it on your devices, then restart ShushTLS to enable HTTPS."
+		msg = "Initialization complete. HTTPS is now active. Download the root CA and install it on your devices."
 	case certengine.Initialized:
 		msg = "Root CA generated. Service certificate pending."
 	default:
@@ -170,6 +174,12 @@ func (h *Handler) handleInitialize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("initialization complete", "state", state.String())
+
+	// Notify the server that HTTPS can be activated.
+	if state == certengine.Ready && h.onReady != nil {
+		h.onReady()
+	}
+
 	writeJSON(w, http.StatusOK, InitializeResponse{
 		State:   state.String(),
 		Message: msg,

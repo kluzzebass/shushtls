@@ -23,7 +23,7 @@ func newTestHandler(t *testing.T) (*Handler, *certengine.Engine) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	hosts := []string{"shushtls.test", "localhost"}
-	h := NewHandler(engine, hosts, logger)
+	h := NewHandler(engine, hosts, logger, nil)
 	return h, engine
 }
 

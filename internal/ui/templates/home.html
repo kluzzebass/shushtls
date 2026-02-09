@@ -21,13 +21,10 @@
 <article>
   <header><strong>Almost there</strong></header>
   <p>
-    Your root CA and service certificate have been generated. Before ShushTLS
-    can switch to HTTPS, you need to:
+    Your root CA has been generated but the service certificate is not yet
+    ready. Complete initialization to activate HTTPS.
   </p>
-  <ol>
-    <li><a href="/trust">Install the root CA</a> on your devices.</li>
-    <li>Restart ShushTLS to enable HTTPS mode.</li>
-  </ol>
+  <a href="/setup" role="button">Go to Setup</a>
 </article>
 
 {{else if eq .State "ready"}}
