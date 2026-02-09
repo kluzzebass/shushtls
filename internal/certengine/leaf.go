@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -17,35 +18,33 @@ type LeafCert struct {
 	Raw  []byte // DER-encoded certificate
 }
 
-// IssueWildcard generates a wildcard leaf certificate for the given domain,
-// signed by the provided CA. The resulting certificate covers *.domain
-// (e.g. *.home.arpa) and the bare domain itself.
-func IssueWildcard(ca *CACert, domain string) (*LeafCert, error) {
-	return issueLeaf(ca, domain, LeafCertValidity)
-}
-
-// IssueServiceCert generates a leaf certificate for a specific hostname,
-// signed by the provided CA. This is used for the ShushTLS service itself.
-func IssueServiceCert(ca *CACert, hostnames ...string) (*LeafCert, error) {
-	if len(hostnames) == 0 {
-		return nil, fmt.Errorf("at least one hostname is required")
+// PrimarySAN returns the first DNS name in the certificate, which is used
+// as the unique identifier for this cert in the store.
+func (l *LeafCert) PrimarySAN() string {
+	if len(l.Cert.DNSNames) > 0 {
+		return l.Cert.DNSNames[0]
 	}
-	return issueLeafForHosts(ca, hostnames, ServiceCertValidity)
+	return l.Cert.Subject.CommonName
 }
 
-// issueLeaf creates a wildcard leaf certificate for the given domain.
-func issueLeaf(ca *CACert, domain string, validity time.Duration) (*LeafCert, error) {
-	// Wildcard SAN covers *.domain; include the bare domain too
-	// so that https://home.arpa also works.
-	hosts := []string{
-		"*." + domain,
-		domain,
+// IssueCertificate generates a leaf certificate with the given DNS names,
+// signed by the provided CA. The first name in dnsNames becomes the
+// primary SAN and the certificate's CommonName.
+//
+// If any name contains a wildcard (e.g. "*.home.arpa"), the bare domain
+// is automatically added as an additional SAN if not already present.
+//
+// This is the single entry point for all leaf certificate issuance —
+// both wildcards and FQDNs.
+func IssueCertificate(ca *CACert, dnsNames []string) (*LeafCert, error) {
+	if len(dnsNames) == 0 {
+		return nil, fmt.Errorf("at least one DNS name is required")
 	}
-	return issueLeafForHosts(ca, hosts, validity)
-}
 
-// issueLeafForHosts creates a leaf certificate with the given DNS SANs.
-func issueLeafForHosts(ca *CACert, dnsNames []string, validity time.Duration) (*LeafCert, error) {
+	// Expand wildcard SANs: if *.example.com is requested, also include
+	// example.com so the bare domain works too.
+	expanded := expandWildcardSANs(dnsNames)
+
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("generate leaf key: %w", err)
@@ -63,9 +62,9 @@ func issueLeafForHosts(ca *CACert, dnsNames []string, validity time.Duration) (*
 			Organization: []string{DefaultCAOrganization},
 			CommonName:   dnsNames[0],
 		},
-		DNSNames:              dnsNames,
+		DNSNames:              expanded,
 		NotBefore:             now,
-		NotAfter:              now.Add(validity),
+		NotAfter:              now.Add(LeafCertValidity),
 		KeyUsage:              LeafKeyUsages,
 		ExtKeyUsage:           LeafExtKeyUsages,
 		BasicConstraintsValid: true,
@@ -88,4 +87,27 @@ func issueLeafForHosts(ca *CACert, dnsNames []string, validity time.Duration) (*
 		Cert: cert,
 		Raw:  der,
 	}, nil
+}
+
+// expandWildcardSANs takes a list of DNS names and, for each wildcard
+// entry like "*.example.com", adds the bare domain "example.com" if it
+// isn't already in the list.
+func expandWildcardSANs(names []string) []string {
+	seen := make(map[string]bool, len(names))
+	for _, n := range names {
+		seen[n] = true
+	}
+
+	var result []string
+	for _, n := range names {
+		result = append(result, n)
+		if strings.HasPrefix(n, "*.") {
+			bare := n[2:] // "*.example.com" -> "example.com"
+			if !seen[bare] {
+				result = append(result, bare)
+				seen[bare] = true
+			}
+		}
+	}
+	return result
 }

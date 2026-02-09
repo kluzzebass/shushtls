@@ -2,6 +2,7 @@ package certengine
 
 import (
 	"fmt"
+	"sort"
 )
 
 // State represents the initialization state of the certificate engine.
@@ -15,7 +16,8 @@ const (
 	// may or may not exist yet. The user needs to install trust and restart.
 	Initialized
 
-	// Ready means all material is present for HTTPS serving.
+	// Ready means the root CA and the ShushTLS service cert are both present.
+	// HTTPS serving is possible.
 	Ready
 )
 
@@ -36,10 +38,10 @@ func (s State) String() string {
 // Engine is the top-level interface to the certificate engine. It wraps
 // the store and provides idempotent, high-level operations.
 type Engine struct {
-	store *Store
-	ca    *CACert    // cached after load/generate
-	wild  *LeafCert  // cached wildcard cert
-	svc   *LeafCert  // cached service cert
+	store       *Store
+	ca          *CACert                // cached after load/generate
+	certs       map[string]*LeafCert   // all issued certs, keyed by primary SAN
+	serviceHost string                 // primary SAN of the ShushTLS service cert
 }
 
 // New creates a new Engine backed by the given state directory.
@@ -50,7 +52,10 @@ func New(stateDir string) (*Engine, error) {
 		return nil, fmt.Errorf("initialize store: %w", err)
 	}
 
-	e := &Engine{store: store}
+	e := &Engine{
+		store: store,
+		certs: make(map[string]*LeafCert),
+	}
 	if err := e.load(); err != nil {
 		return nil, fmt.Errorf("load existing state: %w", err)
 	}
@@ -62,16 +67,21 @@ func (e *Engine) State() State {
 	if e.ca == nil {
 		return Uninitialized
 	}
-	if e.svc == nil {
+	if e.serviceHost == "" || e.certs[e.serviceHost] == nil {
 		return Initialized
 	}
 	return Ready
 }
 
 // Initialize generates the root CA and the ShushTLS service certificate.
-// It is idempotent: if material already exists, it is not regenerated.
+// The first entry in serviceHosts becomes the primary SAN used to identify
+// the service cert. It is idempotent: existing material is not regenerated.
 // Returns the current state after the operation.
 func (e *Engine) Initialize(serviceHosts []string) (State, error) {
+	if len(serviceHosts) == 0 {
+		return e.State(), fmt.Errorf("at least one service hostname is required")
+	}
+
 	// Step 1: Root CA
 	if e.ca == nil {
 		ca, err := GenerateCA()
@@ -85,41 +95,70 @@ func (e *Engine) Initialize(serviceHosts []string) (State, error) {
 	}
 
 	// Step 2: Service certificate (for ShushTLS's own HTTPS listener)
-	if e.svc == nil {
-		svc, err := IssueServiceCert(e.ca, serviceHosts...)
+	e.serviceHost = serviceHosts[0]
+	if e.certs[e.serviceHost] == nil {
+		leaf, err := IssueCertificate(e.ca, serviceHosts)
 		if err != nil {
 			return e.State(), fmt.Errorf("generate service cert: %w", err)
 		}
-		if err := e.store.SaveServiceCert(svc); err != nil {
+		if err := e.store.SaveCert(leaf); err != nil {
 			return e.State(), fmt.Errorf("save service cert: %w", err)
 		}
-		e.svc = svc
+		e.certs[e.serviceHost] = leaf
 	}
 
 	return e.State(), nil
 }
 
-// GenerateWildcard issues a wildcard certificate for the given domain.
-// Idempotent: if a wildcard cert already exists, it is not regenerated.
+// IssueCert generates a leaf certificate for the given DNS names, signed
+// by the root CA. The first name becomes the primary SAN (the key in the
+// store). Idempotent: if a cert with the same primary SAN already exists,
+// it is returned as-is.
+//
 // Requires the root CA to exist (State >= Initialized).
-func (e *Engine) GenerateWildcard(domain string) (*LeafCert, error) {
+func (e *Engine) IssueCert(dnsNames []string) (*LeafCert, error) {
 	if e.ca == nil {
-		return nil, fmt.Errorf("cannot issue wildcard: root CA does not exist (run Initialize first)")
+		return nil, fmt.Errorf("cannot issue certificate: root CA does not exist (run Initialize first)")
+	}
+	if len(dnsNames) == 0 {
+		return nil, fmt.Errorf("at least one DNS name is required")
 	}
 
-	if e.wild != nil {
-		return e.wild, nil
+	primarySAN := dnsNames[0]
+	if existing := e.certs[primarySAN]; existing != nil {
+		return existing, nil
 	}
 
-	wild, err := IssueWildcard(e.ca, domain)
+	leaf, err := IssueCertificate(e.ca, dnsNames)
 	if err != nil {
-		return nil, fmt.Errorf("generate wildcard cert: %w", err)
+		return nil, fmt.Errorf("generate cert for %s: %w", primarySAN, err)
 	}
-	if err := e.store.SaveWildcard(wild); err != nil {
-		return nil, fmt.Errorf("save wildcard cert: %w", err)
+	if err := e.store.SaveCert(leaf); err != nil {
+		return nil, fmt.Errorf("save cert for %s: %w", primarySAN, err)
 	}
-	e.wild = wild
-	return wild, nil
+	e.certs[primarySAN] = leaf
+	return leaf, nil
+}
+
+// GetCert returns an issued certificate by its primary SAN, or nil if
+// no cert has been issued for that name.
+func (e *Engine) GetCert(primarySAN string) *LeafCert {
+	return e.certs[primarySAN]
+}
+
+// ListCerts returns all issued certificates, sorted by primary SAN.
+func (e *Engine) ListCerts() []*LeafCert {
+	sans := make([]string, 0, len(e.certs))
+	for san := range e.certs {
+		sans = append(sans, san)
+	}
+	sort.Strings(sans)
+
+	result := make([]*LeafCert, 0, len(sans))
+	for _, san := range sans {
+		result = append(result, e.certs[san])
+	}
+	return result
 }
 
 // CA returns the root CA, or nil if not yet generated.
@@ -127,14 +166,19 @@ func (e *Engine) CA() *CACert {
 	return e.ca
 }
 
-// Wildcard returns the wildcard leaf cert, or nil if not yet generated.
-func (e *Engine) Wildcard() *LeafCert {
-	return e.wild
+// ServiceCert returns the ShushTLS service leaf cert, or nil if not yet
+// generated. This is a convenience accessor — the service cert is just
+// a regular issued cert that ShushTLS uses for its own HTTPS listener.
+func (e *Engine) ServiceCert() *LeafCert {
+	if e.serviceHost == "" {
+		return nil
+	}
+	return e.certs[e.serviceHost]
 }
 
-// ServiceCert returns the service leaf cert, or nil if not yet generated.
-func (e *Engine) ServiceCert() *LeafCert {
-	return e.svc
+// ServiceHost returns the primary SAN of the service certificate.
+func (e *Engine) ServiceHost() string {
+	return e.serviceHost
 }
 
 // Store returns the underlying store, for direct path queries.
@@ -150,17 +194,18 @@ func (e *Engine) load() error {
 	}
 	e.ca = ca
 
-	wild, err := e.store.LoadWildcard()
+	certs, err := e.store.LoadAllCerts()
 	if err != nil {
-		return fmt.Errorf("load wildcard: %w", err)
+		return fmt.Errorf("load certs: %w", err)
 	}
-	e.wild = wild
-
-	svc, err := e.store.LoadServiceCert()
-	if err != nil {
-		return fmt.Errorf("load service cert: %w", err)
-	}
-	e.svc = svc
+	e.certs = certs
 
 	return nil
+}
+
+// SetServiceHost sets the primary SAN used to identify the service cert.
+// This is called during initialization and can be called after reload
+// to re-associate the service cert.
+func (e *Engine) SetServiceHost(host string) {
+	e.serviceHost = host
 }
