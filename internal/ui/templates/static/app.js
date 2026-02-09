@@ -41,10 +41,15 @@
         if (resp.ok) {
           initResult.innerHTML =
             '<p><strong>Success!</strong> ' + escapeHtml(data.message) + "</p>" +
-            '<p><a href="/trust">Install the root CA &rarr;</a></p>';
+            '<p>Redirecting to trust page&hellip;</p>';
           initResult.setAttribute("class", "");
           initResult.hidden = false;
           initForm.hidden = true;
+          // Give the server a moment to activate HTTPS, then redirect.
+          // HTTP is now in redirect mode, so this navigates via HTTPS.
+          setTimeout(function () {
+            window.location.href = "/trust";
+          }, 1000);
         } else {
           showError(initResult, data.error || "Initialization failed.");
           btn.setAttribute("aria-busy", "false");
