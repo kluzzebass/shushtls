@@ -15,7 +15,7 @@ func main() {
 		stateDir     = flag.String("state-dir", "./state", "directory for persistent state")
 		httpAddr     = flag.String("http-addr", ":8080", "HTTP listen address (setup mode)")
 		httpsAddr    = flag.String("https-addr", ":8443", "HTTPS listen address (normal mode)")
-		serviceHosts = flag.String("service-hosts", "shushtls.home.arpa,localhost", "comma-separated DNS names for ShushTLS's own cert")
+		serviceHosts = flag.String("service-hosts", "shushtls.local,localhost", "comma-separated DNS names for ShushTLS's own cert")
 	)
 	flag.Parse()
 

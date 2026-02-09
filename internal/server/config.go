@@ -29,6 +29,6 @@ func DefaultConfig() Config {
 		StateDir:     "./state",
 		HTTPAddr:     ":8080",
 		HTTPSAddr:    ":8443",
-		ServiceHosts: []string{"shushtls.home.arpa", "localhost"},
+		ServiceHosts: []string{"shushtls.local", "localhost"},
 	}
 }

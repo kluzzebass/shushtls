@@ -48,8 +48,8 @@ const (
 )
 
 // DefaultDomain is the default wildcard domain for leaf certificates.
-// home.arpa is the IETF-recommended domain for home networks (RFC 8375).
-const DefaultDomain = "home.arpa"
+// .local is the conventional suffix for devices on a local network.
+const DefaultDomain = "local"
 
 // CAParams holds optional configuration for root CA generation.
 // All fields are optional — zero values are replaced with defaults
