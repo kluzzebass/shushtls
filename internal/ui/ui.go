@@ -10,6 +10,7 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -17,7 +18,7 @@ import (
 	"shushtls/internal/certengine"
 )
 
-//go:embed templates/*.html
+//go:embed templates/*.html templates/static/*
 var templateFS embed.FS
 
 // Handler serves the ShushTLS web UI pages.
@@ -45,6 +46,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /setup", h.handleSetup)
 	mux.HandleFunc("GET /trust", h.handleTrust)
 	mux.HandleFunc("GET /certificates", h.handleCertificates)
+
+	// Serve embedded static assets (JS, etc.).
+	staticFS, _ := fs.Sub(templateFS, "templates/static")
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 }
 
 // --- Template loading ---

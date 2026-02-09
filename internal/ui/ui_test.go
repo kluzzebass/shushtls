@@ -224,6 +224,30 @@ func TestLayout_HasFooter(t *testing.T) {
 	assertContains(t, body, "the boring way")
 }
 
+// --- Static assets ---
+
+func TestStaticJS_Served(t *testing.T) {
+	h, _ := newTestHandler(t)
+	mux := serveMux(h)
+
+	w := doGet(t, mux, "/static/app.js")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	assertContains(t, body, "api/initialize")
+	assertContains(t, body, "api/certificates")
+}
+
+func TestLayout_IncludesScript(t *testing.T) {
+	h, _ := newTestHandler(t)
+	mux := serveMux(h)
+
+	w := doGet(t, mux, "/")
+	body := w.Body.String()
+	assertContains(t, body, "/static/app.js")
+}
+
 // --- Helpers ---
 
 func assertContains(t *testing.T, body, substr string) {
