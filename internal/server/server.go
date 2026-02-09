@@ -195,7 +195,7 @@ func (s *Server) httpsRedirectHandler() http.Handler {
 			host = net.JoinHostPort(host, port)
 		}
 		target := "https://" + host + r.URL.RequestURI()
-		http.Redirect(w, r, target, http.StatusMovedPermanently)
+		http.Redirect(w, r, target, http.StatusFound)
 	})
 }
 

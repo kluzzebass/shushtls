@@ -174,8 +174,8 @@ func TestServer_ReadyServesHTTPS(t *testing.T) {
 	}
 	httpResp.Body.Close()
 
-	if httpResp.StatusCode != http.StatusMovedPermanently {
-		t.Errorf("HTTP status = %d, want 301", httpResp.StatusCode)
+	if httpResp.StatusCode != http.StatusFound {
+		t.Errorf("HTTP status = %d, want 302", httpResp.StatusCode)
 	}
 	loc := httpResp.Header.Get("Location")
 	if loc == "" {
@@ -337,8 +337,8 @@ func TestServer_HTTPSActivatesAfterInit(t *testing.T) {
 		t.Fatalf("post-init HTTP GET: %v", err)
 	}
 	httpResp.Body.Close()
-	if httpResp.StatusCode != http.StatusMovedPermanently {
-		t.Errorf("post-init HTTP status = %d, want 301", httpResp.StatusCode)
+	if httpResp.StatusCode != http.StatusFound {
+		t.Errorf("post-init HTTP status = %d, want 302", httpResp.StatusCode)
 	}
 	loc := httpResp.Header.Get("Location")
 	if loc == "" {
@@ -438,8 +438,8 @@ func TestServer_HTTPRedirectRewritesPort(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	if resp.StatusCode != http.StatusMovedPermanently {
-		t.Errorf("status = %d, want 301", resp.StatusCode)
+	if resp.StatusCode != http.StatusFound {
+		t.Errorf("status = %d, want 302", resp.StatusCode)
 	}
 
 	loc := resp.Header.Get("Location")
