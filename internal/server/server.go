@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"shushtls/internal/api"
 	"shushtls/internal/certengine"
 )
 
@@ -129,12 +130,23 @@ func (s *Server) runHTTPS(ctx context.Context) error {
 	return s.serveTLS(ctx, srv)
 }
 
-// buildMux constructs the HTTP router. For now this is a placeholder;
-// the API and UI handlers will be added in later epics.
+// buildMux constructs the HTTP router with API routes.
 func (s *Server) buildMux() *http.ServeMux {
 	mux := http.NewServeMux()
 
-	// Placeholder: will be replaced by API and UI routes.
+	// Register API endpoints.
+	apiHandler := api.NewHandler(s.engine, s.config.ServiceHosts, s.logger)
+	apiHandler.Register(mux)
+
+	// Catch-all for unmatched /api/ paths — return proper JSON errors
+	// instead of letting them fall through to the root handler.
+	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprintf(w, `{"error":"unknown API endpoint: %s %s"}`+"\n", r.Method, r.URL.Path)
+	})
+
+	// Root: placeholder; will be replaced by UI later.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		state := s.engine.State()
 		fmt.Fprintf(w, "ShushTLS is running. State: %s\n", state)
