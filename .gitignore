@@ -1,0 +1,19 @@
+# IDE / OS
+*.code-workspace
+.DS_Store
+
+# Go
+/shushtls
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Vendor (if not committed)
+/vendor/
+
+# ShushTLS state (runtime data, never commit)
+/state/
