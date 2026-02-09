@@ -19,8 +19,11 @@ type CACert struct {
 }
 
 // GenerateCA creates a new self-signed root CA certificate and key pair.
-// The certificate is valid for RootCAValidity from now.
-func GenerateCA() (*CACert, error) {
+// The params argument configures the CA subject and validity; zero-value
+// fields are replaced with defaults (see CAParams.WithDefaults).
+func GenerateCA(params CAParams) (*CACert, error) {
+	params = params.WithDefaults()
+
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("generate CA key: %w", err)
@@ -31,15 +34,17 @@ func GenerateCA() (*CACert, error) {
 		return nil, fmt.Errorf("generate CA serial: %w", err)
 	}
 
+	validity := time.Duration(params.ValidityYears) * 365 * 24 * time.Hour
+
 	now := time.Now()
 	template := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
-			Organization: []string{DefaultCAOrganization},
-			CommonName:   DefaultCACommonName,
+			Organization: []string{params.Organization},
+			CommonName:   params.CommonName,
 		},
 		NotBefore:             now,
-		NotAfter:              now.Add(RootCAValidity),
+		NotAfter:              now.Add(validity),
 		KeyUsage:              RootCAKeyUsages,
 		BasicConstraintsValid: true,
 		IsCA:                  true,

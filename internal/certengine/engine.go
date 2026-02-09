@@ -75,16 +75,18 @@ func (e *Engine) State() State {
 
 // Initialize generates the root CA and the ShushTLS service certificate.
 // The first entry in serviceHosts becomes the primary SAN used to identify
-// the service cert. It is idempotent: existing material is not regenerated.
-// Returns the current state after the operation.
-func (e *Engine) Initialize(serviceHosts []string) (State, error) {
+// the service cert. The caParams argument configures the root CA's subject
+// and validity; zero-value fields use defaults (see CAParams.WithDefaults).
+// CAParams are only used when creating a new CA — if the CA already exists,
+// they are ignored (idempotency). Returns the current state after the operation.
+func (e *Engine) Initialize(serviceHosts []string, caParams CAParams) (State, error) {
 	if len(serviceHosts) == 0 {
 		return e.State(), fmt.Errorf("at least one service hostname is required")
 	}
 
 	// Step 1: Root CA
 	if e.ca == nil {
-		ca, err := GenerateCA()
+		ca, err := GenerateCA(caParams)
 		if err != nil {
 			return e.State(), fmt.Errorf("generate root CA: %w", err)
 		}

@@ -30,7 +30,7 @@ func newTestHandler(t *testing.T) (*Handler, *certengine.Engine) {
 func newInitializedHandler(t *testing.T) (*Handler, *certengine.Engine) {
 	t.Helper()
 	h, engine := newTestHandler(t)
-	if _, err := engine.Initialize([]string{"shushtls.test", "localhost"}); err != nil {
+	if _, err := engine.Initialize([]string{"shushtls.test", "localhost"}, certengine.CAParams{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	return h, engine
@@ -188,6 +188,66 @@ func TestInitialize_Idempotent(t *testing.T) {
 	resp := decodeJSON[InitializeResponse](t, w2)
 	if resp.State != "ready" {
 		t.Errorf("state = %q, want %q", resp.State, "ready")
+	}
+}
+
+func TestInitialize_WithCustomCAParams(t *testing.T) {
+	h, engine := newTestHandler(t)
+	mux := serveMux(h)
+
+	body := `{"organization":"Acme Corp","common_name":"Acme Internal CA","validity_years":10}`
+	w := doRequest(t, mux, "POST", "/api/initialize", body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200\nbody: %s", w.Code, w.Body.String())
+	}
+
+	resp := decodeJSON[InitializeResponse](t, w)
+	if resp.State != "ready" {
+		t.Errorf("state = %q, want %q", resp.State, "ready")
+	}
+
+	// Verify the CA actually used the custom params.
+	ca := engine.CA().Cert
+	if ca.Subject.CommonName != "Acme Internal CA" {
+		t.Errorf("CA CN = %q, want %q", ca.Subject.CommonName, "Acme Internal CA")
+	}
+	if len(ca.Subject.Organization) == 0 || ca.Subject.Organization[0] != "Acme Corp" {
+		t.Errorf("CA Org = %v, want [\"Acme Corp\"]", ca.Subject.Organization)
+	}
+}
+
+func TestInitialize_WithPartialCAParams(t *testing.T) {
+	h, engine := newTestHandler(t)
+	mux := serveMux(h)
+
+	// Only set organization — rest should use defaults.
+	body := `{"organization":"My Lab"}`
+	w := doRequest(t, mux, "POST", "/api/initialize", body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200\nbody: %s", w.Code, w.Body.String())
+	}
+
+	ca := engine.CA().Cert
+	if len(ca.Subject.Organization) == 0 || ca.Subject.Organization[0] != "My Lab" {
+		t.Errorf("CA Org = %v, want [\"My Lab\"]", ca.Subject.Organization)
+	}
+	if ca.Subject.CommonName != "ShushTLS Root CA" {
+		t.Errorf("CA CN = %q, want default", ca.Subject.CommonName)
+	}
+}
+
+func TestInitialize_InvalidBody(t *testing.T) {
+	h, _ := newTestHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "POST", "/api/initialize", "not json at all")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400\nbody: %s", w.Code, w.Body.String())
+	}
+
+	resp := decodeJSON[ErrorResponse](t, w)
+	if resp.Error == "" {
+		t.Error("error message should not be empty")
 	}
 }
 

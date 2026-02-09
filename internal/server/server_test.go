@@ -90,7 +90,7 @@ func TestServer_ReadyServesHTTPS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("certengine.New: %v", err)
 	}
-	if _, err := engine.Initialize(serviceHosts); err != nil {
+	if _, err := engine.Initialize(serviceHosts, certengine.CAParams{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 
@@ -170,7 +170,7 @@ func TestServer_InitializedServesHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("certengine.New: %v", err)
 	}
-	ca, err := certengine.GenerateCA()
+	ca, err := certengine.GenerateCA(certengine.CAParams{})
 	if err != nil {
 		t.Fatalf("GenerateCA: %v", err)
 	}

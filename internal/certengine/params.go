@@ -22,10 +22,14 @@ const (
 // Validity periods. These are intentionally long — ShushTLS is designed to
 // be set up once and forgotten for years.
 const (
-	// RootCAValidity is how long the root CA certificate is valid.
+	// DefaultCAValidityYears is the default validity for the root CA in years.
 	// 25 years. The root CA is the anchor of trust; if it expires,
 	// every device needs to re-trust a new one. Make it last.
-	RootCAValidity = 25 * 365 * 24 * time.Hour // ~25 years
+	DefaultCAValidityYears = 25
+
+	// RootCAValidity is the default root CA validity as a time.Duration.
+	// Derived from DefaultCAValidityYears for backward compatibility.
+	RootCAValidity = time.Duration(DefaultCAValidityYears) * 365 * 24 * time.Hour // ~25 years
 
 	// LeafCertValidity is how long wildcard leaf certificates are valid.
 	// 10 years. Shorter than the root CA, but still long enough that
@@ -46,6 +50,38 @@ const (
 // DefaultDomain is the default wildcard domain for leaf certificates.
 // home.arpa is the IETF-recommended domain for home networks (RFC 8375).
 const DefaultDomain = "home.arpa"
+
+// CAParams holds optional configuration for root CA generation.
+// All fields are optional — zero values are replaced with defaults
+// via WithDefaults(). Once the CA is generated, these values are
+// baked into the certificate permanently.
+type CAParams struct {
+	// Organization is the O= field in the CA subject.
+	// Default: "ShushTLS"
+	Organization string `json:"organization,omitempty"`
+
+	// CommonName is the CN= field in the CA subject.
+	// Default: "ShushTLS Root CA"
+	CommonName string `json:"common_name,omitempty"`
+
+	// ValidityYears is how long the root CA certificate is valid, in years.
+	// Default: 25
+	ValidityYears int `json:"validity_years,omitempty"`
+}
+
+// WithDefaults returns a copy of p with zero-value fields replaced by defaults.
+func (p CAParams) WithDefaults() CAParams {
+	if p.Organization == "" {
+		p.Organization = DefaultCAOrganization
+	}
+	if p.CommonName == "" {
+		p.CommonName = DefaultCACommonName
+	}
+	if p.ValidityYears <= 0 {
+		p.ValidityYears = DefaultCAValidityYears
+	}
+	return p
+}
 
 // RootCAKeyUsages defines the X.509 key usage flags for the root CA.
 // CertSign: the CA can sign other certificates.

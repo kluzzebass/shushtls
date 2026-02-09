@@ -132,7 +132,7 @@ func TestEngine_InitializeProducesReadyState(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	state, err := e.Initialize([]string{"shushtls.home.arpa", "localhost"})
+	state, err := e.Initialize([]string{"shushtls.home.arpa", "localhost"}, CAParams{})
 	if err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestEngine_InitializeRequiresHostnames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	_, err = e.Initialize(nil)
+	_, err = e.Initialize(nil, CAParams{})
 	if err == nil {
 		t.Fatal("expected error with empty serviceHosts")
 	}
@@ -167,14 +167,14 @@ func TestEngine_InitializeIsIdempotent(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	state1, err := e.Initialize([]string{"shushtls.home.arpa"})
+	state1, err := e.Initialize([]string{"shushtls.home.arpa"}, CAParams{})
 	if err != nil {
 		t.Fatalf("first Initialize: %v", err)
 	}
 	caSerial := e.CA().Cert.SerialNumber
 	svcSerial := e.ServiceCert().Cert.SerialNumber
 
-	state2, err := e.Initialize([]string{"shushtls.home.arpa"})
+	state2, err := e.Initialize([]string{"shushtls.home.arpa"}, CAParams{})
 	if err != nil {
 		t.Fatalf("second Initialize: %v", err)
 	}
@@ -186,6 +186,129 @@ func TestEngine_InitializeIsIdempotent(t *testing.T) {
 	}
 	if e.ServiceCert().Cert.SerialNumber.Cmp(svcSerial) != 0 {
 		t.Error("service cert was regenerated on second Initialize")
+	}
+}
+
+// --- Configurable CA params tests ---
+
+func TestEngine_InitializeWithCustomCAParams(t *testing.T) {
+	e, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	params := CAParams{
+		Organization:  "Acme Corp",
+		CommonName:    "Acme Internal CA",
+		ValidityYears: 10,
+	}
+
+	state, err := e.Initialize([]string{"shushtls.home.arpa"}, params)
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	if state != Ready {
+		t.Fatalf("expected Ready, got %s", state)
+	}
+
+	ca := e.CA().Cert
+	if ca.Subject.CommonName != "Acme Internal CA" {
+		t.Errorf("CA CN = %q, want %q", ca.Subject.CommonName, "Acme Internal CA")
+	}
+	if len(ca.Subject.Organization) == 0 || ca.Subject.Organization[0] != "Acme Corp" {
+		t.Errorf("CA Org = %v, want [\"Acme Corp\"]", ca.Subject.Organization)
+	}
+
+	// Validity should be ~10 years.
+	duration := ca.NotAfter.Sub(ca.NotBefore)
+	expected := 10 * 365 * 24 * time.Hour
+	if abs(duration-expected) > 24*time.Hour {
+		t.Errorf("CA validity = %v, want ~%v", duration, expected)
+	}
+}
+
+func TestEngine_InitializeWithPartialCAParams(t *testing.T) {
+	e, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Only set Organization — CN and validity should use defaults.
+	params := CAParams{
+		Organization: "My Home Lab",
+	}
+
+	if _, err := e.Initialize([]string{"shushtls.home.arpa"}, params); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+
+	ca := e.CA().Cert
+	if len(ca.Subject.Organization) == 0 || ca.Subject.Organization[0] != "My Home Lab" {
+		t.Errorf("CA Org = %v, want [\"My Home Lab\"]", ca.Subject.Organization)
+	}
+	if ca.Subject.CommonName != DefaultCACommonName {
+		t.Errorf("CA CN = %q, want default %q", ca.Subject.CommonName, DefaultCACommonName)
+	}
+
+	// Validity should be the default ~25 years.
+	duration := ca.NotAfter.Sub(ca.NotBefore)
+	if abs(duration-RootCAValidity) > 24*time.Hour {
+		t.Errorf("CA validity = %v, want ~%v", duration, RootCAValidity)
+	}
+}
+
+func TestEngine_InitializeIgnoresParamsWhenCAExists(t *testing.T) {
+	e, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// First init with defaults.
+	if _, err := e.Initialize([]string{"shushtls.home.arpa"}, CAParams{}); err != nil {
+		t.Fatalf("first Initialize: %v", err)
+	}
+	origCN := e.CA().Cert.Subject.CommonName
+
+	// Second init with different params — should be ignored (idempotent).
+	if _, err := e.Initialize([]string{"shushtls.home.arpa"}, CAParams{
+		CommonName: "Totally Different CA",
+	}); err != nil {
+		t.Fatalf("second Initialize: %v", err)
+	}
+
+	if e.CA().Cert.Subject.CommonName != origCN {
+		t.Errorf("CA CN changed from %q to %q — params should be ignored on re-init",
+			origCN, e.CA().Cert.Subject.CommonName)
+	}
+}
+
+func TestCAParams_WithDefaults(t *testing.T) {
+	// All zeros should produce all defaults.
+	p := CAParams{}.WithDefaults()
+	if p.Organization != DefaultCAOrganization {
+		t.Errorf("Organization = %q, want %q", p.Organization, DefaultCAOrganization)
+	}
+	if p.CommonName != DefaultCACommonName {
+		t.Errorf("CommonName = %q, want %q", p.CommonName, DefaultCACommonName)
+	}
+	if p.ValidityYears != DefaultCAValidityYears {
+		t.Errorf("ValidityYears = %d, want %d", p.ValidityYears, DefaultCAValidityYears)
+	}
+
+	// Provided values should not be overwritten.
+	p2 := CAParams{
+		Organization:  "Custom",
+		CommonName:    "Custom CA",
+		ValidityYears: 5,
+	}.WithDefaults()
+	if p2.Organization != "Custom" {
+		t.Errorf("Organization = %q, want %q", p2.Organization, "Custom")
+	}
+	if p2.CommonName != "Custom CA" {
+		t.Errorf("CommonName = %q, want %q", p2.CommonName, "Custom CA")
+	}
+	if p2.ValidityYears != 5 {
+		t.Errorf("ValidityYears = %d, want %d", p2.ValidityYears, 5)
 	}
 }
 
@@ -327,7 +450,7 @@ func TestEngine_ReloadFromDisk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if _, err := e1.Initialize([]string{"shushtls.home.arpa"}); err != nil {
+	if _, err := e1.Initialize([]string{"shushtls.home.arpa"}, CAParams{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	if _, err := e1.IssueCert([]string{"*.home.arpa"}); err != nil {
@@ -574,7 +697,7 @@ func TestStore_HasCert(t *testing.T) {
 	}
 
 	// Generate and save a CA, then issue a cert.
-	ca, err := GenerateCA()
+	ca, err := GenerateCA(CAParams{})
 	if err != nil {
 		t.Fatalf("GenerateCA: %v", err)
 	}
@@ -624,7 +747,7 @@ func TestStore_FilePermissions(t *testing.T) {
 		t.Fatalf("NewStore: %v", err)
 	}
 
-	ca, err := GenerateCA()
+	ca, err := GenerateCA(CAParams{})
 	if err != nil {
 		t.Fatalf("GenerateCA: %v", err)
 	}
@@ -684,7 +807,7 @@ func TestStore_WildcardCertDiskLayout(t *testing.T) {
 		t.Fatalf("NewStore: %v", err)
 	}
 
-	ca, err := GenerateCA()
+	ca, err := GenerateCA(CAParams{})
 	if err != nil {
 		t.Fatalf("GenerateCA: %v", err)
 	}
@@ -711,7 +834,7 @@ func TestStore_LoadAllCerts(t *testing.T) {
 		t.Fatalf("NewStore: %v", err)
 	}
 
-	ca, err := GenerateCA()
+	ca, err := GenerateCA(CAParams{})
 	if err != nil {
 		t.Fatalf("GenerateCA: %v", err)
 	}
@@ -794,11 +917,11 @@ func TestStore_LoadCA_ErrorsOnMismatchedKeyAndCert(t *testing.T) {
 		t.Fatalf("NewStore: %v", err)
 	}
 
-	ca1, err := GenerateCA()
+	ca1, err := GenerateCA(CAParams{})
 	if err != nil {
 		t.Fatalf("GenerateCA 1: %v", err)
 	}
-	ca2, err := GenerateCA()
+	ca2, err := GenerateCA(CAParams{})
 	if err != nil {
 		t.Fatalf("GenerateCA 2: %v", err)
 	}
@@ -844,7 +967,7 @@ func initEngine(t *testing.T) *Engine {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if _, err := e.Initialize([]string{"shushtls.home.arpa", "localhost"}); err != nil {
+	if _, err := e.Initialize([]string{"shushtls.home.arpa", "localhost"}, CAParams{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	return e

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -134,7 +135,22 @@ func (h *Handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 // POST /api/initialize
 func (h *Handler) handleInitialize(w http.ResponseWriter, r *http.Request) {
-	state, err := h.engine.Initialize(h.serviceHosts)
+	// Parse optional CA params from the request body.
+	// An empty body is fine — all fields default to sensible values.
+	var caParams certengine.CAParams
+	if r.Body != nil {
+		body, _ := io.ReadAll(r.Body)
+		if len(body) > 0 {
+			if err := json.Unmarshal(body, &caParams); err != nil {
+				writeJSON(w, http.StatusBadRequest, ErrorResponse{
+					Error: fmt.Sprintf("invalid request body: %v", err),
+				})
+				return
+			}
+		}
+	}
+
+	state, err := h.engine.Initialize(h.serviceHosts, caParams)
 	if err != nil {
 		h.logger.Error("initialization failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, ErrorResponse{
