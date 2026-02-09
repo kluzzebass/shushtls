@@ -1,0 +1,66 @@
+{{define "title"}}ShushTLS — Setup{{end}}
+{{define "content"}}
+<h1>Setup</h1>
+
+{{if eq .State "uninitialized"}}
+<article>
+  <header><strong>Initialize ShushTLS</strong></header>
+  <p>
+    This will generate a private root CA and a service certificate for
+    ShushTLS. You can optionally customize the CA parameters below, or
+    leave them blank to use sensible defaults.
+  </p>
+
+  <form id="init-form">
+    <fieldset>
+      <label for="organization">
+        Organization
+        <input type="text" id="organization" name="organization"
+               placeholder="ShushTLS" aria-label="Organization name">
+      </label>
+
+      <label for="common_name">
+        Common Name
+        <input type="text" id="common_name" name="common_name"
+               placeholder="ShushTLS Root CA" aria-label="CA common name">
+      </label>
+
+      <label for="validity_years">
+        Validity (years)
+        <input type="number" id="validity_years" name="validity_years"
+               placeholder="25" min="1" max="100" aria-label="Validity in years">
+      </label>
+    </fieldset>
+
+    <button type="submit" id="init-btn">Initialize</button>
+  </form>
+
+  <div id="init-result" role="alert" hidden></div>
+
+  <noscript>
+    <hr>
+    <p>JavaScript is disabled. Use curl to initialize:</p>
+    <pre><code>curl -X POST http://{{.Host}}/api/initialize</code></pre>
+    <p>Or with custom parameters:</p>
+    <pre><code>curl -X POST http://{{.Host}}/api/initialize \
+  -H "Content-Type: application/json" \
+  -d '{"organization":"My Lab","common_name":"My Root CA","validity_years":25}'</code></pre>
+  </noscript>
+</article>
+
+{{else}}
+<article>
+  <header><strong>Already initialized</strong></header>
+  <p>
+    ShushTLS has already been initialized. The root CA and service certificate exist.
+  </p>
+  <p>
+    {{if eq .State "initialized"}}
+      Next step: <a href="/trust">install the root CA</a> on your devices, then restart ShushTLS.
+    {{else}}
+      ShushTLS is running in HTTPS mode. <a href="/">View status &rarr;</a>
+    {{end}}
+  </p>
+</article>
+{{end}}
+{{end}}

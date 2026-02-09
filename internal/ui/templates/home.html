@@ -1,0 +1,67 @@
+{{define "title"}}ShushTLS — Status{{end}}
+{{define "content"}}
+<hgroup>
+  <h1>Status</h1>
+  <p>Current state: <span class="state-badge" data-state="{{.State}}">{{.State}}</span></p>
+</hgroup>
+
+{{if eq .State "uninitialized"}}
+<article>
+  <header><strong>Welcome to ShushTLS</strong></header>
+  <p>
+    ShushTLS generates a private root CA for your home network so you can
+    use real HTTPS everywhere — no browser warnings, no public certificate
+    authorities, no renewal headaches.
+  </p>
+  <p>To get started, initialize the root CA and your service certificate.</p>
+  <a href="/setup" role="button">Go to Setup</a>
+</article>
+
+{{else if eq .State "initialized"}}
+<article>
+  <header><strong>Almost there</strong></header>
+  <p>
+    Your root CA and service certificate have been generated. Before ShushTLS
+    can switch to HTTPS, you need to:
+  </p>
+  <ol>
+    <li><a href="/trust">Install the root CA</a> on your devices.</li>
+    <li>Restart ShushTLS to enable HTTPS mode.</li>
+  </ol>
+</article>
+
+{{else if eq .State "ready"}}
+{{if .RootCA}}
+<article>
+  <header><strong>Root CA</strong></header>
+  <dl>
+    <dt>Subject</dt>
+    <dd>{{.RootCA.Subject}}</dd>
+    <dt>Fingerprint (SHA-256)</dt>
+    <dd><code>{{.RootCA.Fingerprint}}</code></dd>
+    <dt>Valid</dt>
+    <dd>{{.RootCA.NotBefore}} &mdash; {{.RootCA.NotAfter}}</dd>
+  </dl>
+  <a href="/api/ca/root.pem" role="button" class="outline">Download Root CA (PEM)</a>
+</article>
+{{end}}
+
+{{if .Certs}}
+<article>
+  <header><strong>Service Certificate</strong></header>
+  {{range .Certs}}{{if .IsService}}
+  <dl>
+    <dt>Primary SAN</dt>
+    <dd>{{.PrimarySAN}}</dd>
+    <dt>DNS Names</dt>
+    <dd>{{range .DNSNames}}{{.}} {{end}}</dd>
+    <dt>Valid</dt>
+    <dd>{{.NotBefore}} &mdash; {{.NotAfter}}</dd>
+  </dl>
+  {{end}}{{end}}
+  <p><a href="/certificates">Manage all certificates &rarr;</a></p>
+</article>
+{{end}}
+
+{{end}}
+{{end}}

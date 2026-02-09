@@ -1,0 +1,66 @@
+{{define "title"}}ShushTLS — Trust Installation{{end}}
+{{define "content"}}
+<h1>Install Root CA</h1>
+
+{{if eq .State "uninitialized"}}
+<article>
+  <p>The root CA has not been generated yet. <a href="/setup">Run setup first.</a></p>
+</article>
+{{else}}
+
+<p>
+  Download the root CA certificate and install it on each device that needs to
+  trust your internal HTTPS services. This is a one-time step per device.
+</p>
+
+<p><a href="/api/ca/root.pem" role="button">Download Root CA (PEM)</a></p>
+
+<h2>Platform Instructions</h2>
+
+<article>
+  <header><strong>macOS</strong></header>
+  <pre><code>sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain shushtls-root-ca.pem</code></pre>
+  <p>Or: open the .pem file, add to System keychain, then set to "Always Trust" in Keychain Access.</p>
+</article>
+
+<article>
+  <header><strong>Linux (Debian/Ubuntu)</strong></header>
+  <pre><code>sudo cp shushtls-root-ca.pem /usr/local/share/ca-certificates/shushtls-root-ca.crt
+sudo update-ca-certificates</code></pre>
+</article>
+
+<article>
+  <header><strong>Linux (RHEL/Fedora)</strong></header>
+  <pre><code>sudo cp shushtls-root-ca.pem /etc/pki/ca-trust/source/anchors/shushtls-root-ca.pem
+sudo update-ca-trust</code></pre>
+</article>
+
+<article>
+  <header><strong>Windows</strong></header>
+  <pre><code>Import-Certificate -FilePath shushtls-root-ca.pem -CertStoreLocation Cert:\LocalMachine\Root</code></pre>
+  <p>Run PowerShell as Administrator. Or: double-click the file &rarr; Install Certificate &rarr; Local Machine &rarr; Trusted Root Certification Authorities.</p>
+</article>
+
+<article>
+  <header><strong>iOS</strong></header>
+  <ol>
+    <li>Download the .pem file (email it to yourself or use AirDrop).</li>
+    <li>Open it &mdash; iOS will prompt to install a profile.</li>
+    <li>Go to <strong>Settings &rarr; General &rarr; VPN &amp; Device Management</strong> and install the profile.</li>
+    <li>Go to <strong>Settings &rarr; General &rarr; About &rarr; Certificate Trust Settings</strong> and enable full trust.</li>
+  </ol>
+</article>
+
+<article>
+  <header><strong>Android</strong></header>
+  <ol>
+    <li>Copy the .pem file to the device.</li>
+    <li>Go to <strong>Settings &rarr; Security &rarr; Encryption &amp; credentials &rarr; Install a certificate &rarr; CA certificate</strong>.</li>
+    <li>Select the .pem file and confirm.</li>
+  </ol>
+  <p><small>Note: Android apps must opt in to user-installed CAs (network security config). System-level trust requires a rooted device.</small></p>
+</article>
+
+{{end}}
+{{end}}

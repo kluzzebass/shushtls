@@ -1,0 +1,49 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{block "title" .}}ShushTLS{{end}}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    /* Minimal overrides — keep Pico.css doing the heavy lifting. */
+    nav .brand { text-decoration: none; }
+    .state-badge {
+      display: inline-block;
+      padding: 0.15em 0.5em;
+      border-radius: 4px;
+      font-size: 0.85em;
+      font-weight: 600;
+    }
+    .state-badge[data-state="ready"]         { background: #2ecc40; color: #fff; }
+    .state-badge[data-state="initialized"]   { background: #ff851b; color: #fff; }
+    .state-badge[data-state="uninitialized"] { background: #aaa;    color: #fff; }
+    footer { text-align: center; font-size: 0.85em; opacity: 0.7; }
+  </style>
+</head>
+<body>
+  <header class="container">
+    <nav>
+      <ul>
+        <li><a href="/" class="brand"><strong>ShushTLS</strong></a></li>
+      </ul>
+      <ul>
+        <li><a href="/"{{if eq .ActiveNav "home"}} aria-current="page"{{end}}>Status</a></li>
+        <li><a href="/setup"{{if eq .ActiveNav "setup"}} aria-current="page"{{end}}>Setup</a></li>
+        <li><a href="/certificates"{{if eq .ActiveNav "certificates"}} aria-current="page"{{end}}>Certificates</a></li>
+        <li><a href="/trust"{{if eq .ActiveNav "trust"}} aria-current="page"{{end}}>Trust</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main class="container">
+    {{block "content" .}}{{end}}
+  </main>
+
+  <footer class="container">
+    <hr>
+    <p>ShushTLS &mdash; HTTPS for your home network, the boring way.</p>
+  </footer>
+</body>
+</html>
+{{end}}

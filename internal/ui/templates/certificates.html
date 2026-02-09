@@ -1,0 +1,70 @@
+{{define "title"}}ShushTLS — Certificates{{end}}
+{{define "content"}}
+<h1>Certificates</h1>
+
+{{if eq .State "uninitialized"}}
+<article>
+  <p>No certificates yet. <a href="/setup">Initialize ShushTLS first.</a></p>
+</article>
+
+{{else}}
+
+{{if .Certs}}
+<figure>
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Primary SAN</th>
+        <th scope="col">DNS Names</th>
+        <th scope="col">Valid Until</th>
+        <th scope="col">Type</th>
+        <th scope="col">Download</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Certs}}
+      <tr>
+        <td><code>{{.PrimarySAN}}</code></td>
+        <td>{{range .DNSNames}}{{.}} {{end}}</td>
+        <td>{{.NotAfter}}</td>
+        <td>{{if .IsService}}service{{else}}issued{{end}}</td>
+        <td>
+          <a href="/api/certificates/{{.PrimarySAN}}">cert</a> &middot;
+          <a href="/api/certificates/{{.PrimarySAN}}?type=key">key</a>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</figure>
+{{else}}
+<p>No certificates issued yet.</p>
+{{end}}
+
+<article>
+  <header><strong>Issue a new certificate</strong></header>
+
+  <form id="issue-form">
+    <label for="dns_names">
+      DNS Names
+      <input type="text" id="dns_names" name="dns_names"
+             placeholder="*.home.arpa, nas.home.arpa"
+             aria-label="Comma-separated DNS names" required>
+      <small>Comma-separated. Use *.domain for wildcards.</small>
+    </label>
+    <button type="submit" id="issue-btn">Issue Certificate</button>
+  </form>
+
+  <div id="issue-result" role="alert" hidden></div>
+
+  <noscript>
+    <hr>
+    <p>JavaScript is disabled. Use curl to issue certificates:</p>
+    <pre><code>curl -X POST {{.Scheme}}://{{.Host}}/api/certificates \
+  -H "Content-Type: application/json" \
+  -d '{"dns_names": ["*.home.arpa"]}'</code></pre>
+  </noscript>
+</article>
+
+{{end}}
+{{end}}

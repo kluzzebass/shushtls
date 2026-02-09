@@ -13,6 +13,7 @@ import (
 
 	"shushtls/internal/api"
 	"shushtls/internal/certengine"
+	"shushtls/internal/ui"
 )
 
 // Server is the main ShushTLS application server. It inspects the
@@ -81,7 +82,10 @@ func (s *Server) Run(ctx context.Context) error {
 // runHTTP starts an HTTP-only server for the setup/initialization flow.
 // This is used before the root CA exists or before the service cert is ready.
 func (s *Server) runHTTP(ctx context.Context) error {
-	mux := s.buildMux()
+	mux, err := s.buildMux()
+	if err != nil {
+		return err
+	}
 
 	srv := &http.Server{
 		Addr:              s.config.HTTPAddr,
@@ -100,7 +104,10 @@ func (s *Server) runHTTP(ctx context.Context) error {
 // runHTTPS starts an HTTPS-only server using the ShushTLS service certificate.
 // This is the normal operating mode after initialization and trust installation.
 func (s *Server) runHTTPS(ctx context.Context) error {
-	mux := s.buildMux()
+	mux, err := s.buildMux()
+	if err != nil {
+		return err
+	}
 
 	certPath, keyPath := s.engine.Store().CertPaths(s.engine.ServiceHost())
 
@@ -130,8 +137,8 @@ func (s *Server) runHTTPS(ctx context.Context) error {
 	return s.serveTLS(ctx, srv)
 }
 
-// buildMux constructs the HTTP router with API routes.
-func (s *Server) buildMux() *http.ServeMux {
+// buildMux constructs the HTTP router with API and UI routes.
+func (s *Server) buildMux() (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 
 	// Register API endpoints.
@@ -139,20 +146,21 @@ func (s *Server) buildMux() *http.ServeMux {
 	apiHandler.Register(mux)
 
 	// Catch-all for unmatched /api/ paths — return proper JSON errors
-	// instead of letting them fall through to the root handler.
+	// instead of letting them fall through to the UI handler.
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprintf(w, `{"error":"unknown API endpoint: %s %s"}`+"\n", r.Method, r.URL.Path)
 	})
 
-	// Root: placeholder; will be replaced by UI later.
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		state := s.engine.State()
-		fmt.Fprintf(w, "ShushTLS is running. State: %s\n", state)
-	})
+	// Register web UI routes.
+	uiHandler, err := ui.NewHandler(s.engine, s.logger)
+	if err != nil {
+		return nil, fmt.Errorf("initialize UI: %w", err)
+	}
+	uiHandler.Register(mux)
 
-	return mux
+	return mux, nil
 }
 
 // serve runs an HTTP server with graceful shutdown on context cancellation
