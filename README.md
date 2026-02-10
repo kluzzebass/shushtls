@@ -181,6 +181,23 @@ Override with `-state-dir`.
   shushtls.lock      # Lock file while the server is running; removed on exit
 ```
 
+## Docker
+
+Build and run with Docker. The image uses a **volume for the state directory** so your CA and certs survive container restarts and image updates. If you don’t mount a volume, state is lost when the container is replaced.
+
+```bash
+# Build
+docker build -t shushtls .
+
+# Run: mount a volume at /data/shushtls (state dir). Publish HTTP and HTTPS.
+docker run -d --name shushtls \
+  -v shushtls-data:/data/shushtls \
+  -p 8080:8080 -p 8443:8443 \
+  shushtls
+```
+
+The container listens on `0.0.0.0:8080` (HTTP) and `0.0.0.0:8443` (HTTPS). Use `-state-dir /data/shushtls` if you override the entrypoint; the default CMD already points there. **Always use a named or bind volume for `/data/shushtls`** so certs are not lost on `docker pull` and re-create.
+
 ## Maintenance
 
 For whoever returns to this system after a long time.

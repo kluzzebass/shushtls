@@ -1,0 +1,9 @@
+.git
+.dogcats
+*.md
+justfile
+*_test.go
+.env
+.env.*
+Dockerfile
+.dockerignore
