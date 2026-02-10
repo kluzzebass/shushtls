@@ -76,7 +76,7 @@ As certificate validity periods get shorter (see [Certificate longevity](#certif
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/api/certificates` | no | List all issued certificates (JSON). |
-| POST | `/api/certificates` | yes | Issue a certificate. Body: `{"dns_names": ["host.example.com", "*.example.com"]}`. Idempotent: same primary name returns existing cert. |
+| POST | `/api/certificates` | yes | Register a certificate (SAN config). Body: `{"dns_names": ["host.example.com", "*.example.com"]}`. Idempotent. The actual cert and key are generated on download (GET). |
 | GET | `/api/certificates/{primary_san}` | no | Download certificate PEM. Example: `GET /api/certificates/nas.home.arpa` |
 | GET | `/api/certificates/{primary_san}?type=key` | yes | Download private key PEM. Requires auth when auth is enabled. |
 | GET | `/api/ca/root.pem` | no | Download root CA certificate (PEM). |
@@ -99,7 +99,7 @@ Returns a JSON array of certificate objects:
 ]
 ```
 
-Use `not_after` to decide when to re-issue. Issuing again with the same `dns_names` returns the existing cert; to get a fresh cert for the same name you must remove the old one from the server state (not exposed in the UI; for automation you may script against the state directory or re-issue before expiry and deploy).
+Use `not_after` to plan when to fetch a fresh cert. Leaf certs (except the service cert) are generated on each download: `GET /api/certificates/{san}` and `GET /api/certificates/{san}?type=key` return a new cert and key every time. No need to remove or re-issue; just download again before expiry and deploy to your service.
 
 ### Issue request/response (POST /api/certificates)
 
@@ -173,9 +173,8 @@ Override with `-state-dir`.
     ca-key.pem      # Root CA private key (keep secret)
     ca-cert.pem     # Root CA certificate (install this on devices)
   certs/
-    <sanitized-SAN>/   # One dir per issued cert (e.g. nas.home.arpa, _wildcard_.home.arpa)
-      key.pem
-      cert.pem
+    <sanitized-SAN>/   # One dir per registered SAN (e.g. nas.home.arpa, _wildcard_.home.arpa)
+      dns_names        # SAN config only; cert/key generated on each download. Service cert also has key.pem and cert.pem
   service-host       # Primary SAN of the cert used for ShushTLS’s own HTTPS
   auth.json          # Optional; present if auth was ever enabled
   shushtls.lock      # Lock file while the server is running; removed on exit
@@ -216,18 +215,18 @@ For whoever returns to this system after a long time.
 
 **Regenerating or re-issuing certificates**
 
-- **Leaf certs:** Use the web UI (Certificates) or `POST /api/certificates` with `{"dns_names": ["host.example.com"]}`. Issuing the same primary name again returns the existing cert (idempotent). To get a *new* cert for the same name you’d need to remove the existing cert directory under `certs/` and issue again (not exposed in the UI).
-- **ShushTLS’s own HTTPS cert (service cert):** Issue another cert from the UI and choose “Use as service.” No restart; the server picks it up immediately.
+- **Leaf certs (non-service):** Certs are generated on download. Register the SAN once via the UI (Certificates) or `POST /api/certificates`; then `GET /api/certificates/{san}` and `GET /api/certificates/{san}?type=key` return a fresh cert and key every time. To get a new cert, just download again and deploy to your service. No removal or re-issue step.
+- **ShushTLS’s own HTTPS cert (service cert):** Stored on disk. Issue another cert from the UI and choose “Use as service.” No restart; the server picks it up immediately.
 - **Root CA:** Generated once at initialization. There is no in-app “regenerate root.” Replacing it would mean re-trusting on every device (effectively start over with a new state dir or backup).
 
 **Adding a new device:** Install the root CA on the new device using the scripts on the Install CA page (or manually add the root PEM to that device’s trust store). No need to touch ShushTLS’s state directory.
 
 **If a certificate expires**
 
-- **Leaf certs:** Re-issue before expiry from Certificates and deploy the new cert to your service. Use the [longevity table](#certificate-longevity-leaf-certs) to plan; the UI shows each cert’s validity.
+- **Leaf certs (non-service):** Download again from the UI (cert + key) or via `GET /api/certificates/{san}` and `?type=key`; you get a fresh cert and key each time. Deploy to your service. Use the [longevity table](#certificate-longevity-leaf-certs) to plan; the UI shows validity.
 - **Root CA:** Default validity is 25 years. If it ever approaches expiry, you’d generate a new root (e.g. new state dir) and re-install trust on all devices.
 
-**Rebuilding the binary:** `just build` (or `go build -o shushtls .`). Tests: `just test`. Run: `just run` or `./shushtls` with optional flags. Dependencies are in `go.mod` / `go.sum`; requires a Go toolchain. The version in the UI footer defaults to `dev`; for a release build use `just build-release 1.0.0` or `go build -ldflags "-X shushtls/internal/version.Version=1.0.0" -o shushtls .`.
+**Rebuilding the binary:** `just build` (or `go build -o shushtls .`). Tests: `just test`. Run: `just run` or `./shushtls` with optional flags. Dependencies are in `go.mod` / `go.sum`; requires a Go toolchain. The version on the About page defaults to `dev`; for a release build use `just build-release 1.0.0` or `go build -ldflags "-X shushtls/internal/version.Version=1.0.0" -o shushtls .`.
 
 **Troubleshooting**
 

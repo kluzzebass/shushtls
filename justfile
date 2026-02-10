@@ -1,5 +1,9 @@
 # ShushTLS — command runner recipes
 
+# Default: list available recipes.
+_default:
+    just --list
+
 # Build the binary.
 build:
     go build -o shushtls .

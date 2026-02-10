@@ -22,23 +22,31 @@ import (
 //go:embed templates/*.html templates/static/*
 var templateFS embed.FS
 
+// AboutInfo holds version and attribution shown on the About page and footer.
+type AboutInfo struct {
+	Version   string
+	RepoURL   string
+	Author    string
+	Copyright string
+}
+
 // Handler serves the ShushTLS web UI pages.
 type Handler struct {
 	engine    *certengine.Engine
 	authStore *auth.Store // optional; nil if auth is not available
 	logger    *slog.Logger
-	version   string
+	about     AboutInfo
 	templates map[string]*template.Template
 }
 
 // NewHandler creates a UI handler backed by the given engine.
-// The authStore may be nil to disable auth UI. version is shown in the UI footer.
-func NewHandler(engine *certengine.Engine, authStore *auth.Store, logger *slog.Logger, version string) (*Handler, error) {
+// The authStore may be nil to disable auth UI. about is shown in the footer and About page.
+func NewHandler(engine *certengine.Engine, authStore *auth.Store, logger *slog.Logger, about AboutInfo) (*Handler, error) {
 	h := &Handler{
 		engine:    engine,
 		authStore: authStore,
 		logger:    logger,
-		version:   version,
+		about:     about,
 	}
 	if err := h.loadTemplates(); err != nil {
 		return nil, fmt.Errorf("load templates: %w", err)
@@ -54,6 +62,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /certificates", h.handleCertificates)
 	mux.HandleFunc("GET /docs", h.handleDocs)
 	mux.HandleFunc("GET /settings", h.requireAuth(h.handleSettings))
+	mux.HandleFunc("GET /about", h.handleAbout)
 
 	// Serve embedded static assets (JS, etc.).
 	staticFS, _ := fs.Sub(templateFS, "templates/static")
@@ -66,7 +75,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 // template sets. Each page overrides the "title" and "content" blocks
 // defined in the layout.
 func (h *Handler) loadTemplates() error {
-	pages := []string{"setup", "trust", "certificates", "docs", "settings"}
+	pages := []string{"setup", "trust", "certificates", "docs", "settings", "about"}
 	h.templates = make(map[string]*template.Template, len(pages))
 
 	for _, page := range pages {
@@ -106,7 +115,7 @@ type pageData struct {
 	Scheme      string
 	BaseURL     string // scheme://host for self-referencing URLs
 	AuthEnabled bool
-	Version     string
+	About       AboutInfo
 	RootCA      *caInfo
 	Certs       []certInfo
 }
@@ -138,7 +147,7 @@ func (h *Handler) buildPageData(r *http.Request, activeNav string) pageData {
 		Scheme:      scheme,
 		BaseURL:     scheme + "://" + r.Host,
 		AuthEnabled: h.authStore != nil && h.authStore.IsEnabled(),
-		Version:     h.version,
+		About:       h.about,
 	}
 
 	if ca := h.engine.CA(); ca != nil {
@@ -209,6 +218,11 @@ func (h *Handler) handleDocs(w http.ResponseWriter, r *http.Request) {
 // GET /settings
 func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "settings", h.buildPageData(r, "settings"))
+}
+
+// GET /about
+func (h *Handler) handleAbout(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "about", h.buildPageData(r, "about"))
 }
 
 // --- Helpers ---

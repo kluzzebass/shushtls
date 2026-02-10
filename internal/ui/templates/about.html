@@ -1,0 +1,27 @@
+{{define "title"}}ShushTLS — About{{end}}
+{{define "content"}}
+<h1>About</h1>
+
+<p>ShushTLS is a small, local-first PKI for your home or lab. You run it on one machine, issue TLS certificates for your services (NAS, web apps, etc.), and install its root CA on your devices so browsers trust your certs. No public CAs, no cloud, no account.</p>
+
+<article>
+  <header><strong>Version</strong></header>
+  <p>{{if .About.Version}}<code>v{{.About.Version}}</code>{{else}}<em>unknown</em>{{end}}</p>
+</article>
+
+{{if or .About.Author .About.RepoURL}}
+<article>
+  <header><strong>Source &amp; attribution</strong></header>
+  <ul>
+    {{if .About.Author}}<li>{{.About.Author}}</li>{{end}}
+    {{if .About.RepoURL}}<li><a href="{{.About.RepoURL}}" target="_blank" rel="noopener">Source code</a></li>{{end}}
+  </ul>
+</article>
+{{end}}
+
+<article>
+  <header><strong>License</strong></header>
+  {{if .About.Copyright}}<p>{{.About.Copyright}}</p>{{end}}
+  <p>Licensed under the <a href="https://opensource.org/license/mit/">MIT License</a>.</p>
+</article>
+{{end}}

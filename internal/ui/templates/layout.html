@@ -55,6 +55,7 @@
         <li><a href="/certificates"{{if eq .ActiveNav "certificates"}} aria-current="page"{{end}}>Certificates</a></li>
         <li><a href="/docs"{{if eq .ActiveNav "docs"}} aria-current="page"{{end}}>Docs</a></li>
         <li><a href="/settings"{{if eq .ActiveNav "settings"}} aria-current="page"{{end}}>Settings</a></li>
+        <li><a href="/about"{{if eq .ActiveNav "about"}} aria-current="page"{{end}}>About</a></li>
         <li><button type="button" id="theme-toggle" class="outline secondary theme-toggle" aria-label="Toggle light/dark theme">Theme</button></li>
       </ul>
     </nav>
@@ -66,7 +67,7 @@
 
   <footer class="container">
     <hr>
-    <p>ShushTLS &mdash; HTTPS for your home network, the boring way. {{if .Version}}<code>v{{.Version}}</code>{{end}}</p>
+    <p><a href="/about">ShushTLS</a> &mdash; HTTPS for your home network.</p>
   </footer>
   <script src="/static/app.js" defer></script>
 </body>

@@ -20,7 +20,7 @@ func newTestHandler(t *testing.T) (*Handler, *certengine.Engine) {
 		t.Fatalf("certengine.New: %v", err)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	h, err := NewHandler(engine, nil, logger, "test")
+	h, err := NewHandler(engine, nil, logger, AboutInfo{Version: "test"})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestLayout_HasFooter(t *testing.T) {
 
 	w := doGet(t, mux, "/")
 	body := w.Body.String()
-	assertContains(t, body, "the boring way")
+	assertContains(t, body, "HTTPS for your home network")
 }
 
 // --- Static assets ---
