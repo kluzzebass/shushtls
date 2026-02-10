@@ -185,11 +185,23 @@ Override with `-state-dir`.
 
 Build and run with Docker. The image uses a **volume for the state directory** so your CA and certs survive container restarts and image updates. If you don’t mount a volume, state is lost when the container is replaced.
 
-```bash
-# Build
-docker build -t shushtls .
+**Build (single arch, current platform):**
 
-# Run: mount a volume at /data/shushtls (state dir). Publish HTTP and HTTPS.
+```bash
+docker build -t shushtls .
+```
+
+**Build multi-arch (amd64 + arm64) and push** (e.g. for a registry so `docker pull` gets the right arch):
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -t your-registry/shushtls:tag . --push
+```
+
+Create a buildx builder first if needed: `docker buildx create --use`.
+
+**Run:** mount a volume at `/data/shushtls` (state dir) and publish HTTP and HTTPS:
+
+```bash
 docker run -d --name shushtls \
   -v shushtls-data:/data/shushtls \
   -p 8080:8080 -p 8443:8443 \
