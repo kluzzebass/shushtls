@@ -114,6 +114,15 @@ func methodNotAllowed(allowed string) http.HandlerFunc {
 	}
 }
 
+// internalError logs the real error and responds with a sanitized message.
+// Used for 500 errors to avoid leaking internal details to the client.
+func (h *Handler) internalError(w http.ResponseWriter, msg string, err error) {
+	h.logger.Error(msg, "error", err)
+	writeJSON(w, http.StatusInternalServerError, ErrorResponse{
+		Error: msg + " — check server logs for details",
+	})
+}
+
 // --- Response types ---
 
 // StatusResponse is the JSON body for GET /api/status.
@@ -230,10 +239,7 @@ func (h *Handler) handleInitialize(w http.ResponseWriter, r *http.Request) {
 
 	state, err := h.engine.Initialize(h.serviceHosts, caParams)
 	if err != nil {
-		h.logger.Error("initialization failed", "error", err)
-		writeJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error: fmt.Sprintf("initialization failed: %v", err),
-		})
+		h.internalError(w, "initialization failed", err)
 		return
 	}
 
@@ -320,10 +326,7 @@ func (h *Handler) handleIssueCert(w http.ResponseWriter, r *http.Request) {
 
 	leaf, err := h.engine.IssueCert(req.DNSNames)
 	if err != nil {
-		h.logger.Error("certificate issuance failed", "error", err)
-		writeJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error: fmt.Sprintf("certificate issuance failed: %v", err),
-		})
+		h.internalError(w, "certificate issuance failed", err)
 		return
 	}
 
@@ -390,9 +393,7 @@ func (h *Handler) handleGetCert(w http.ResponseWriter, r *http.Request) {
 		}
 		der, err := x509.MarshalECPrivateKey(leaf.Key)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, ErrorResponse{
-				Error: fmt.Sprintf("marshal key: %v", err),
-			})
+			h.internalError(w, "failed to export private key", err)
 			return
 		}
 		pemBlock := pem.EncodeToMemory(&pem.Block{
@@ -451,10 +452,7 @@ func (h *Handler) handleAuth(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := h.authStore.Enable(req.Username, req.Password); err != nil {
-			h.logger.Error("failed to enable auth", "error", err)
-			writeJSON(w, http.StatusInternalServerError, ErrorResponse{
-				Error: fmt.Sprintf("failed to enable auth: %v", err),
-			})
+			h.internalError(w, "failed to enable authentication", err)
 			return
 		}
 		h.logger.Info("authentication enabled", "username", req.Username)
@@ -465,10 +463,7 @@ func (h *Handler) handleAuth(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Disabling auth.
 		if err := h.authStore.Disable(); err != nil {
-			h.logger.Error("failed to disable auth", "error", err)
-			writeJSON(w, http.StatusInternalServerError, ErrorResponse{
-				Error: fmt.Sprintf("failed to disable auth: %v", err),
-			})
+			h.internalError(w, "failed to disable authentication", err)
 			return
 		}
 		h.logger.Info("authentication disabled")

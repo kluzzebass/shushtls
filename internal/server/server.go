@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -30,6 +31,7 @@ type Server struct {
 	logger    *slog.Logger
 	readyCh   chan struct{} // closed when engine transitions to Ready
 	readyOnce sync.Once
+	lockFile  *os.File     // exclusive lock on state directory
 }
 
 // New creates a new Server with the given configuration.
@@ -37,6 +39,10 @@ func New(cfg Config) (*Server, error) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
+
+	if err := validateStateDir(cfg.StateDir); err != nil {
+		return nil, err
+	}
 
 	engine, err := certengine.New(cfg.StateDir)
 	if err != nil {
@@ -87,11 +93,13 @@ func (s *Server) Run(ctx context.Context) error {
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	if err := s.acquireLock(); err != nil {
+		return err
+	}
+	defer s.releaseLock()
+
 	state := s.engine.State()
-	s.logger.Info("ShushTLS starting",
-		"state", state.String(),
-		"stateDir", s.config.StateDir,
-	)
+	s.logStartup(state)
 
 	mux, err := s.buildMux()
 	if err != nil {
@@ -110,7 +118,7 @@ func (s *Server) Run(ctx context.Context) error {
 	errCh := make(chan error, 2)
 
 	go func() {
-		s.logger.Info("serving HTTP", "addr", s.config.HTTPAddr)
+		s.logger.Info("HTTP listener started", "addr", s.config.HTTPAddr)
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errCh <- fmt.Errorf("HTTP server: %w", err)
 		}
@@ -127,10 +135,6 @@ func (s *Server) Run(ctx context.Context) error {
 			return err
 		}
 	} else {
-		s.logger.Info("setup mode — initialize via the web UI or POST /api/initialize",
-			"httpAddr", s.config.HTTPAddr,
-		)
-
 		// Wait for initialization or early exit.
 		select {
 		case err := <-errCh:
@@ -180,7 +184,7 @@ func (s *Server) startHTTPS(handler http.Handler, errCh chan<- error) (*http.Ser
 	}
 
 	go func() {
-		s.logger.Info("serving HTTPS", "addr", s.config.HTTPSAddr, "serviceHost", s.engine.ServiceHost())
+		s.logger.Info("HTTPS listener started", "addr", s.config.HTTPSAddr)
 		if err := srv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
 			errCh <- fmt.Errorf("HTTPS server: %w", err)
 		}
@@ -288,4 +292,105 @@ func (sh *switchableHandler) Switch(h http.Handler) {
 	sh.mu.Lock()
 	sh.handler = h
 	sh.mu.Unlock()
+}
+
+// --- Startup & lifecycle helpers ---
+
+// validateStateDir checks that the state directory exists (or can be
+// created) and is actually a directory.
+func validateStateDir(dir string) error {
+	info, err := os.Stat(dir)
+	if os.IsNotExist(err) {
+		if mkErr := os.MkdirAll(dir, 0700); mkErr != nil {
+			return fmt.Errorf("cannot create state directory %q: %w", dir, mkErr)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("cannot access state directory %q: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("state path %q exists but is not a directory", dir)
+	}
+	return nil
+}
+
+// acquireLock takes an exclusive file lock on shushtls.lock inside the
+// state directory, preventing two instances from using the same state.
+func (s *Server) acquireLock() error {
+	lockPath := filepath.Join(s.config.StateDir, "shushtls.lock")
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return fmt.Errorf("cannot create lock file: %w", err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		return fmt.Errorf("another ShushTLS instance is already using %s", s.config.StateDir)
+	}
+	s.lockFile = f
+	return nil
+}
+
+// releaseLock releases the state directory lock.
+func (s *Server) releaseLock() {
+	if s.lockFile != nil {
+		syscall.Flock(int(s.lockFile.Fd()), syscall.LOCK_UN)
+		s.lockFile.Close()
+		os.Remove(s.lockFile.Name())
+		s.lockFile = nil
+	}
+}
+
+// logStartup emits structured startup info so operators and log pipelines
+// get consistent, parseable records instead of free-form text.
+func (s *Server) logStartup(state certengine.State) {
+	httpURL := addrToURL(s.config.HTTPAddr, "http")
+
+	attrs := []any{
+		"state", state.String(),
+		"state_dir", s.config.StateDir,
+		"http_url", httpURL,
+	}
+
+	switch state {
+	case certengine.Ready:
+		attrs = append(attrs, "https_url", s.serviceHTTPSURL())
+		if svc := s.engine.ServiceCert(); svc != nil {
+			attrs = append(attrs, "service_cert", svc.PrimarySAN(), "service_cert_expires", svc.Cert.NotAfter.Format("2006-01-02"))
+		}
+		if ca := s.engine.CA(); ca != nil {
+			attrs = append(attrs, "root_ca_expires", ca.Cert.NotAfter.Format("2006-01-02"))
+		}
+		s.logger.Info("ShushTLS started", attrs...)
+	default:
+		attrs = append(attrs, "next", "open http_url in browser to initialize")
+		s.logger.Info("ShushTLS started (setup mode)", attrs...)
+	}
+}
+
+// serviceHTTPSURL constructs the HTTPS URL using the service hostname
+// and HTTPS port.
+func (s *Server) serviceHTTPSURL() string {
+	host := s.engine.ServiceHost()
+	_, port, _ := net.SplitHostPort(s.config.HTTPSAddr)
+	if port == "" || port == "443" {
+		return "https://" + host
+	}
+	return "https://" + net.JoinHostPort(host, port)
+}
+
+// addrToURL converts a listen address like ":8080" to a human-readable
+// URL like "http://localhost:8080".
+func addrToURL(addr, scheme string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return scheme + "://" + addr
+	}
+	if host == "" || host == "0.0.0.0" {
+		host = "localhost"
+	}
+	if (scheme == "http" && port == "80") || (scheme == "https" && port == "443") {
+		return scheme + "://" + host
+	}
+	return scheme + "://" + net.JoinHostPort(host, port)
 }

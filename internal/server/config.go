@@ -2,6 +2,11 @@
 // bootstrap-aware serving logic.
 package server
 
+import (
+	"os"
+	"path/filepath"
+)
+
 // Config holds the configuration for the ShushTLS server.
 type Config struct {
 	// StateDir is the directory where all persistent state is stored
@@ -26,9 +31,22 @@ type Config struct {
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		StateDir:     "./state",
+		StateDir:     DefaultStateDir(),
 		HTTPAddr:     ":8080",
 		HTTPSAddr:    ":8443",
 		ServiceHosts: []string{"shushtls.local", "localhost"},
 	}
+}
+
+// DefaultStateDir returns the platform-appropriate default state directory:
+//   - Linux: $XDG_CONFIG_HOME/shushtls or ~/.config/shushtls
+//   - macOS: ~/Library/Application Support/shushtls
+//   - Windows: %AppData%\shushtls
+// On error (e.g. user config dir unavailable) returns "./state".
+func DefaultStateDir() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "./state"
+	}
+	return filepath.Join(dir, "shushtls")
 }
