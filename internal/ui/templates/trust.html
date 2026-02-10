@@ -20,17 +20,17 @@
 
 <article>
   <header><strong>macOS</strong></header>
-  <pre><code>curl -fsSL {{.BaseURL}}/api/ca/install/macos | bash</code></pre>
+  <pre><code>curl -kfsSL {{.BaseURL}}/api/ca/install/macos | bash</code></pre>
 </article>
 
 <article>
   <header><strong>Linux (Debian/Ubuntu/RHEL/Fedora)</strong></header>
-  <pre><code>curl -fsSL {{.BaseURL}}/api/ca/install/linux | sudo bash</code></pre>
+  <pre><code>curl -kfsSL {{.BaseURL}}/api/ca/install/linux | sudo bash</code></pre>
 </article>
 
 <article>
   <header><strong>Windows (PowerShell as Administrator)</strong></header>
-  <pre><code>irm {{.BaseURL}}/api/ca/install/windows | iex</code></pre>
+  <pre><code>irm -SkipCertificateCheck {{.BaseURL}}/api/ca/install/windows | iex</code></pre>
 </article>
 
 <h2>Manual Installation</h2>

@@ -489,17 +489,17 @@ func (h *Handler) handleInstallIndex(w http.ResponseWriter, r *http.Request) {
 		{
 			Platform: "macOS",
 			Endpoint: "/api/ca/install/macos",
-			Example:  fmt.Sprintf("curl -fsSL %s/api/ca/install/macos | bash", base),
+			Example:  fmt.Sprintf("curl -kfsSL %s/api/ca/install/macos | bash", base),
 		},
 		{
 			Platform: "Linux (Debian/Ubuntu/RHEL/Fedora)",
 			Endpoint: "/api/ca/install/linux",
-			Example:  fmt.Sprintf("curl -fsSL %s/api/ca/install/linux | sudo bash", base),
+			Example:  fmt.Sprintf("curl -kfsSL %s/api/ca/install/linux | sudo bash", base),
 		},
 		{
 			Platform: "Windows (PowerShell)",
 			Endpoint: "/api/ca/install/windows",
-			Example:  fmt.Sprintf("irm %s/api/ca/install/windows | iex", base),
+			Example:  fmt.Sprintf("irm -SkipCertificateCheck %s/api/ca/install/windows | iex", base),
 		},
 	}
 
@@ -518,14 +518,15 @@ func (h *Handler) handleInstallMacOS(w http.ResponseWriter, r *http.Request) {
 	base := baseURL(r)
 	script := fmt.Sprintf(`#!/bin/bash
 # ShushTLS Root CA Installer — macOS
-# Usage: curl -fsSL %[1]s/api/ca/install/macos | bash
+# Usage: curl -kfsSL %[1]s/api/ca/install/macos | bash
 set -euo pipefail
 
 TMPFILE=$(mktemp /tmp/shushtls-root-ca.XXXXXX.pem)
 trap 'rm -f "$TMPFILE"' EXIT
 
 echo "Downloading ShushTLS root CA..."
-curl -fsSL -o "$TMPFILE" %[1]s/api/ca/root.pem
+# -k is needed because the CA isn't trusted yet — that's what we're fixing.
+curl -kfsSL -o "$TMPFILE" %[1]s/api/ca/root.pem
 
 echo "Installing into macOS system trust store..."
 echo "(You may be prompted for your password.)"
@@ -550,26 +551,27 @@ func (h *Handler) handleInstallLinux(w http.ResponseWriter, r *http.Request) {
 	base := baseURL(r)
 	script := fmt.Sprintf(`#!/bin/bash
 # ShushTLS Root CA Installer — Linux
-# Usage: curl -fsSL %[1]s/api/ca/install/linux | sudo bash
+# Usage: curl -kfsSL %[1]s/api/ca/install/linux | sudo bash
 set -euo pipefail
 
 echo "Downloading ShushTLS root CA..."
+# -k is needed because the CA isn't trusted yet — that's what we're fixing.
 
 # Detect distro family and install accordingly.
 if command -v update-ca-certificates >/dev/null 2>&1; then
     # Debian / Ubuntu / Alpine
-    curl -fsSL -o /usr/local/share/ca-certificates/shushtls-root-ca.crt %[1]s/api/ca/root.pem
+    curl -kfsSL -o /usr/local/share/ca-certificates/shushtls-root-ca.crt %[1]s/api/ca/root.pem
     update-ca-certificates
     echo "Done! Root CA installed via update-ca-certificates."
 elif command -v update-ca-trust >/dev/null 2>&1; then
     # RHEL / Fedora / CentOS
-    curl -fsSL -o /etc/pki/ca-trust/source/anchors/shushtls-root-ca.pem %[1]s/api/ca/root.pem
+    curl -kfsSL -o /etc/pki/ca-trust/source/anchors/shushtls-root-ca.pem %[1]s/api/ca/root.pem
     update-ca-trust extract
     echo "Done! Root CA installed via update-ca-trust."
 else
     echo "Error: Could not find update-ca-certificates or update-ca-trust."
     echo "Please install the root CA manually:"
-    echo "  curl -fsSL -o shushtls-root-ca.pem %[1]s/api/ca/root.pem"
+    echo "  curl -kfsSL -o shushtls-root-ca.pem %[1]s/api/ca/root.pem"
     exit 1
 fi
 `, base)
@@ -589,7 +591,7 @@ func (h *Handler) handleInstallWindows(w http.ResponseWriter, r *http.Request) {
 
 	base := baseURL(r)
 	script := fmt.Sprintf(`# ShushTLS Root CA Installer — Windows (PowerShell)
-# Usage: irm %[1]s/api/ca/install/windows | iex
+# Usage: irm -SkipCertificateCheck %[1]s/api/ca/install/windows | iex
 # Must be run as Administrator.
 
 $ErrorActionPreference = "Stop"
@@ -597,7 +599,8 @@ $ErrorActionPreference = "Stop"
 $tmpFile = Join-Path $env:TEMP "shushtls-root-ca.pem"
 
 Write-Host "Downloading ShushTLS root CA..."
-Invoke-WebRequest -Uri "%[1]s/api/ca/root.pem" -OutFile $tmpFile
+# -SkipCertificateCheck is needed because the CA isn't trusted yet.
+Invoke-WebRequest -SkipCertificateCheck -Uri "%[1]s/api/ca/root.pem" -OutFile $tmpFile
 
 Write-Host "Installing into Windows certificate store (LocalMachine\Root)..."
 $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($tmpFile)
