@@ -12,6 +12,10 @@ build:
 build-release version:
     go build -ldflags "-X shushtls/internal/version.Version={{ version }}" -o shushtls .
 
+# Bump version, tag, and push (triggers GitHub Actions release). Usage: just release major|minor|patch
+release bump:
+    ./scripts/release.sh {{ bump }}
+
 # Run all tests.
 test:
     go test -count=1 -timeout 60s ./...

@@ -179,28 +179,29 @@ func TestCertificates_WithCerts(t *testing.T) {
 // --- Navigation tests ---
 
 func TestNavigation_ActivePageHighlighted(t *testing.T) {
-	h, _ := newTestHandler(t)
-	mux := serveMux(h)
+	// Uninitialized: /, /setup, /trust show reduced nav; Certificates/Docs need full nav.
+	uninit, _ := newTestHandler(t)
+	initH, _ := newInitializedHandler(t)
+	muxUninit := serveMux(uninit)
+	muxInit := serveMux(initH)
 
-	// When uninitialized, / shows Setup; /setup shows Setup; both highlight Setup.
 	tests := []struct {
-		path    string
-		current string
+		path string
+		mux  *http.ServeMux
 	}{
-		{"/", "Setup"},
-		{"/setup", "Setup"},
-		{"/trust", "Install CA"},
-		{"/certificates", "Certificates"},
-		{"/docs", "Docs"},
+		{"/", muxUninit},
+		{"/setup", muxUninit},
+		{"/trust", muxUninit},
+		{"/certificates", muxInit},
+		{"/docs", muxInit},
 	}
 
 	for _, tt := range tests {
-		w := doGet(t, mux, tt.path)
+		w := doGet(t, tt.mux, tt.path)
 		if w.Code != http.StatusOK {
 			t.Errorf("%s: status = %d, want 200", tt.path, w.Code)
 			continue
 		}
-		// The active nav item should have aria-current="page".
 		body := w.Body.String()
 		assertContains(t, body, `aria-current="page"`)
 	}
