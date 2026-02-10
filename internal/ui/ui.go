@@ -64,7 +64,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 // template sets. Each page overrides the "title" and "content" blocks
 // defined in the layout.
 func (h *Handler) loadTemplates() error {
-	pages := []string{"home", "setup", "trust", "certificates", "docs", "settings"}
+	pages := []string{"setup", "trust", "certificates", "docs", "settings"}
 	h.templates = make(map[string]*template.Template, len(pages))
 
 	for _, page := range pages {
@@ -169,13 +169,21 @@ func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 // --- Page handlers ---
 
-// GET / (exact match only via {$})
+// GET / — Setup when uninitialized, Install CA when ready. No separate status page.
 func (h *Handler) handleHome(w http.ResponseWriter, r *http.Request) {
-	h.render(w, "home", h.buildPageData(r, "home"))
+	if h.engine.State() == certengine.Uninitialized {
+		h.render(w, "setup", h.buildPageData(r, "setup"))
+	} else {
+		h.render(w, "trust", h.buildPageData(r, "trust"))
+	}
 }
 
-// GET /setup
+// GET /setup — redirect to / when already initialized (/ shows Install CA then).
 func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
+	if h.engine.State() != certengine.Uninitialized {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
 	h.render(w, "setup", h.buildPageData(r, "setup"))
 }
 

@@ -6,7 +6,7 @@
 <h2>Philosophy</h2>
 <ul>
   <li><strong>You own the CA.</strong> The root certificate is generated on your machine and never leaves your control. Trust is established by installing that root on each device (laptop, phone, TV) that should trust your certs.</li>
-  <li><strong>LAN trust model.</strong> ShushTLS assumes a trusted local network. The web UI and API are not locked down by default; optional HTTP Basic Auth is available in Settings if you want it. It does not try to be a hardened internet-facing service.</li>
+  <li><strong>LAN trust model.</strong> ShushTLS assumes a trusted local network. The web UI and API are not locked down by default; optional HTTP Basic Auth is available in <a href="/settings">Settings</a> if you want it. It does not try to be a hardened internet-facing service.</li>
   <li><strong>No restart after setup.</strong> Start the server, open the UI, initialize, install the root CA on your devices—HTTPS turns on automatically. No process restart.</li>
 </ul>
 </section>
@@ -14,11 +14,26 @@
 <section id="cert-model">
 <h2>Certificate model (root vs leaf)</h2>
 <ul>
-  <li><strong>Root CA (one per ShushTLS instance).</strong> A long-lived certificate that acts as the trust anchor. You install this in your OS or browser trust store (see <a href="/trust">Trust</a>). Once a device trusts it, that device will accept any certificate signed by this root. ShushTLS generates it at initialization and keeps it in the state directory.</li>
-  <li><strong>Leaf certificates (many).</strong> Short-lived certificates signed by your root, each bound to specific DNS names (e.g. <code>nas.home.arpa</code> or <code>*.home.arpa</code>). You issue these via the UI or API and use them on your services (web server, NAS, etc.). Browsers accept them because they chain to the root CA you installed.</li>
-  <li><strong>Why install trust?</strong> Browsers and OSes only trust a fixed set of public CAs. Your ShushTLS root is private, so every device that should accept your certs must be told to trust that root. The install scripts on the <a href="/trust">Trust</a> page do exactly that.</li>
+  <li><strong>Root CA (one per ShushTLS instance).</strong> A long-lived certificate that acts as the trust anchor. You install this in your OS or browser trust store (see <a href="/trust">Install CA</a>). Once a device trusts it, that device will accept any certificate signed by this root. ShushTLS generates it at initialization and keeps it in the state directory. <strong>Validity:</strong> 25 years by default.</li>
+  <li><strong>Leaf certificates (many).</strong> Certificates signed by your root, each bound to specific DNS names (e.g. <code>nas.home.arpa</code> or <code>*.home.arpa</code>). You issue these via the UI or API and use them on your services. Browsers accept them because they chain to the root CA you installed. <strong>Validity:</strong> follows the CA/Browser Forum rules below.</li>
+  <li><strong>Why install the root on each device?</strong> Browsers and OSes only trust a fixed set of public CAs. Your ShushTLS root is private, so every device that should accept your certs must be told to trust that root. The install scripts on the <a href="/trust">Install CA</a> page do exactly that.</li>
 </ul>
 <p>So: one root (you install it once per device), many leaves (you issue as needed).</p>
+
+<h3>Certificate longevity (leaf certs)</h3>
+<p>Maximum TLS certificate lifetime is set by the <strong>CA/Browser Forum ballot SC-081</strong>. Browsers will reject certs that exceed these limits. ShushTLS issues leaf certs within the current limit.</p>
+<table>
+  <thead>
+    <tr><th>From</th><th>Maximum leaf validity</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Until 2026-03-15</td><td>398 days</td></tr>
+    <tr><td>2026-03-15</td><td>200 days</td></tr>
+    <tr><td>2027-03-15</td><td>100 days</td></tr>
+    <tr><td>2029-03-15</td><td>47 days</td></tr>
+  </tbody>
+</table>
+<p>The app may be updated over time to use the shorter validity as these dates take effect. Plan to re-issue leaf certs before they expire; the <a href="/certificates">Certificates</a> page shows validity for each cert.</p>
 </section>
 
 <section id="bootstrap">
@@ -26,7 +41,7 @@
 <ol>
   <li><strong>First start.</strong> Server starts in HTTP-only mode. Logs show the URL (e.g. <code>http://localhost:8080</code>).</li>
   <li><strong>Initialize.</strong> Open that URL, complete <a href="/setup">Setup</a>. ShushTLS generates the root CA and its own service certificate (for this UI over HTTPS).</li>
-  <li><strong>Install trust.</strong> On each device (Mac, Linux, Windows, etc.), run the install script or download the root PEM from <a href="/trust">Trust</a> and add it to the system trust store.</li>
+  <li><strong>Install trust.</strong> On each device (Mac, Linux, Windows, etc.), run the install script or download the root PEM from <a href="/trust">Install CA</a> and add it to the system trust store.</li>
   <li><strong>HTTPS active.</strong> As soon as initialization completes, the server enables HTTPS and redirects HTTP to it. No restart. Use the HTTPS URL from the logs and continue issuing certs from <a href="/certificates">Certificates</a>.</li>
 </ol>
 <p>If you start with an existing state directory (already initialized), the server goes straight to HTTPS and redirect.</p>
@@ -37,7 +52,7 @@
 <p>ShushTLS intentionally does <strong>not</strong> do the following. These are conscious limits, not missing features.</p>
 <ul>
   <li><strong>No public trust.</strong> The root CA is for your network only. You explicitly install it on each device. That keeps the model simple and keeps you in control.</li>
-  <li><strong>No short-lived certs / automatic rotation.</strong> Certificates are issued with validity that meets current browser rules (e.g. 200 days). There is no built-in ACME, no auto-renewal. You re-issue when needed.</li>
+  <li><strong>No short-lived certs / automatic rotation.</strong> Certificates are issued with validity that meets current browser rules (see <a href="#cert-model">Certificate longevity</a> above). There is no built-in ACME, no auto-renewal. You re-issue when needed.</li>
   <li><strong>No revocation.</strong> There is no CRL or OCSP. If you need to revoke a cert, stop using it and re-issue a new one for that name if necessary.</li>
   <li><strong>No auth by default.</strong> The UI and API are open on the LAN. Optional HTTP Basic Auth can be enabled in <a href="/settings">Settings</a>.</li>
   <li><strong>No HA / clustering.</strong> One instance, one state directory. A lock file prevents running two instances against the same state.</li>
@@ -48,24 +63,55 @@
 <section id="auth-state">
 <h2>Optional auth and state directory</h2>
 <p>After initialization, you can enable HTTP Basic Auth in <a href="/settings">Settings</a>. When enabled, it protects initialization, certificate issuance, and status; listing certs and downloading the root PEM remain unauthenticated so install scripts and devices can still get the root. Private key downloads require auth when auth is on.</p>
-<p>Default state directory is the platform config dir (e.g. <code>~/.config/shushtls</code> on Linux, <code>~/Library/Application Support/shushtls</code> on macOS). Override with <code>-state-dir</code>. All persistent data lives there. Only one ShushTLS process may use a given state directory at a time.</p>
+<p><strong>State directory:</strong> Default is the platform config dir (e.g. <code>~/.config/shushtls</code> on Linux, <code>~/Library/Application Support/shushtls</code> on macOS). Override with <code>-state-dir</code>. Layout: <code>ca/</code> (root CA key and cert), <code>certs/</code> (one subdir per issued cert), <code>service-host</code>, <code>auth.json</code> (if auth enabled), <code>shushtls.lock</code> (only while the server is running). Only one ShushTLS process may use a given state directory at a time.</p>
+</section>
+
+<section id="api">
+<h2>API for automation</h2>
+<p>As certificate validity gets shorter, automating issuance and download matters. Use the same base URL as this UI. If auth is enabled, use HTTP Basic Auth for protected endpoints.</p>
+
+<h3>Certificate endpoints</h3>
+<table>
+  <thead>
+    <tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>GET</td><td><code>/api/certificates</code></td><td>no</td><td>List all issued certificates (JSON).</td></tr>
+    <tr><td>POST</td><td><code>/api/certificates</code></td><td>yes</td><td>Issue a cert. Body: <code>{"dns_names": ["host.example.com"]}</code>. Idempotent.</td></tr>
+    <tr><td>GET</td><td><code>/api/certificates/{primary_san}</code></td><td>no</td><td>Download certificate PEM.</td></tr>
+    <tr><td>GET</td><td><code>/api/certificates/{primary_san}?type=key</code></td><td>yes</td><td>Download private key PEM.</td></tr>
+    <tr><td>GET</td><td><code>/api/ca/root.pem</code></td><td>no</td><td>Download root CA (PEM).</td></tr>
+  </tbody>
+</table>
+<p><code>{primary_san}</code> is the first DNS name (e.g. <code>nas.home.arpa</code> or <code>*.home.arpa</code>). For wildcards use <code>%2A</code> in the URL. Use <code>not_after</code> from the list to plan re-issuance.</p>
+
+<h3>Example: issue and download</h3>
+<pre><code># BASE = your ShushTLS URL (e.g. https://shushtls.local:8443)
+# SAN = primary name (e.g. nas.home.arpa)
+
+# Issue (idempotent); add -u user:pass if auth is on
+curl -sS -X POST "$BASE/api/certificates" \
+  -H "Content-Type: application/json" \
+  -d '{"dns_names": ["'"$SAN"'"]}'
+
+# Download cert and key
+curl -sS -o cert.pem "$BASE/api/certificates/$SAN"
+curl -sS -o key.pem -u user:pass "$BASE/api/certificates/$SAN?type=key"</code></pre>
+<p>Errors are JSON: <code>{"error": "message"}</code>. 400 = bad request, 409 = not initialized, 401 = auth required.</p>
 </section>
 
 <section id="maintenance">
-<h2>Maintenance (Future Me)</h2>
+<h2>Maintenance</h2>
 <p>For whoever returns to this system after a long time.</p>
 
-<h3>Where state lives</h3>
-<p>Under the state directory: <code>ca/</code> (root CA key and cert), <code>certs/</code> (one subdir per issued cert), <code>service-host</code> (which cert is used for ShushTLS's HTTPS), <code>auth.json</code> (if auth was enabled), <code>shushtls.lock</code> (only while the server is running).</p>
-
 <h3>Regenerating or re-issuing certificates</h3>
-<p><strong>Leaf certs:</strong> Use <a href="/certificates">Certificates</a> to issue. Same name returns the existing cert (idempotent). <strong>Service cert:</strong> Issue a new cert from Certificates, then choose &ldquo;Use as service&rdquo;—no restart. <strong>Root CA:</strong> Generated once at initialization; no in-app regenerate. Replacing it would mean re-trusting on every device.</p>
+<p><strong>Leaf certs:</strong> Use <a href="/certificates">Certificates</a> to issue. Same name returns the existing cert (idempotent). <strong>Service cert:</strong> Issue a new cert from <a href="/certificates">Certificates</a>, then choose &ldquo;Use as service&rdquo;—no restart. <strong>Root CA:</strong> Generated once at initialization; no in-app regenerate. Replacing it would mean re-trusting on every device.</p>
 
 <h3>Adding a new device</h3>
-<p>Install the root CA on the new device using the scripts on <a href="/trust">Trust</a> (or manually add the root PEM to that device's trust store). No need to touch ShushTLS state.</p>
+<p>Install the root CA on the new device using the scripts on <a href="/trust">Install CA</a> (or manually add the root PEM to that device's trust store). No need to touch ShushTLS state.</p>
 
 <h3>If a certificate expires</h3>
-<p><strong>Leaf certs:</strong> Validity is 200 days. Before expiry, issue a new cert from Certificates and deploy it to your service. <strong>Root CA:</strong> Default 25 years. If it ever approaches expiry, you'd generate a new root and re-install trust on all devices.</p>
+<p><strong>Leaf certs:</strong> Re-issue before expiry from <a href="/certificates">Certificates</a> and deploy the new cert to your service. Use the <a href="#cert-model">Certificate longevity</a> table to plan. <strong>Root CA:</strong> Default 25 years. If it ever approaches expiry, you'd generate a new root and re-install trust on all devices.</p>
 
 <h3>Rebuilding the binary</h3>
 <p><code>just build</code> (or <code>go build -o shushtls .</code>). Tests: <code>just test</code>. Run: <code>just run</code> or <code>./shushtls</code> with optional flags.</p>

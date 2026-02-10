@@ -1,13 +1,14 @@
 {{define "title"}}ShushTLS — Setup{{end}}
 {{define "content"}}
 <h1>Setup</h1>
+<p>Create your private root CA and the certificate for this ShushTLS instance. You only do this once. After initialization, HTTPS is active and you can issue certificates for your other services (NAS, web apps, etc.) from the <a href="/certificates">Certificates</a> page.</p>
 
 {{if eq .State "uninitialized"}}
 <article>
   <header><strong>Initialize ShushTLS</strong></header>
   <p>
-    This will generate a private root CA and a service certificate for
-    ShushTLS. You can optionally customize the CA parameters below, or
+    Clicking Initialize will generate the root CA and a service certificate for
+    this UI. You can optionally customize the CA parameters below, or
     leave them blank to use sensible defaults.
   </p>
 
@@ -56,9 +57,9 @@
   </p>
   <p>
     {{if eq .State "initialized"}}
-      Next step: <a href="/trust">install the root CA</a> on your devices.
+      Next step: <a href="/">install the root CA on your devices</a>.
     {{else}}
-      ShushTLS is running in HTTPS mode. <a href="/">View status &rarr;</a>
+      ShushTLS is running in HTTPS mode. <a href="/">Install the root CA on your devices</a>.
     {{end}}
   </p>
 </article>

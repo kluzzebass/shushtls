@@ -1,22 +1,19 @@
-{{define "title"}}ShushTLS — Trust Installation{{end}}
+{{define "title"}}ShushTLS — Install root CA{{end}}
 {{define "content"}}
-<h1>Install Root CA</h1>
+<h1>Install root CA</h1>
 
 {{if eq .State "uninitialized"}}
 <article>
-  <p>The root CA has not been generated yet. <a href="/setup">Run setup first.</a></p>
+  <p>The root CA has not been generated yet. <a href="/">Run Setup first</a>.</p>
 </article>
 {{else}}
 
 <p>
-  Download the root CA certificate and install it on each device that needs to
-  trust your internal HTTPS services. This is a one-time step per device.
+  Browsers only trust certificates from authorities they know. Your ShushTLS root CA is private, so each device (laptop, phone, tablet, etc.) that should accept your certs must have this root installed <strong>once</strong>. After that, the device will accept all certificates you <a href="/certificates">issue from ShushTLS</a>. Use a one-line installer below, or download the PEM for manual install.
 </p>
 
-<p><a href="/api/ca/root.pem" role="button">Download Root CA (PEM)</a></p>
-
-<h2>One-Line Installers</h2>
-<p>Run one of these commands on the target device to download and install the root CA automatically:</p>
+<h2>One-line installers</h2>
+<p>Run one of these on the <strong>target device</strong> to download and install the root CA:</p>
 
 <article>
   <header><strong>macOS</strong></header>
@@ -33,7 +30,9 @@
   <pre><code>irm -SkipCertificateCheck {{.BaseURL}}/api/ca/install/windows | iex</code></pre>
 </article>
 
-<h2>Manual Installation</h2>
+<p>Or <a href="/api/ca/root.pem">download the root CA (PEM)</a> and install it manually.</p>
+
+<h2>Manual installation</h2>
 
 <details>
   <summary>macOS — manual steps</summary>

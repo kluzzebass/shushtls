@@ -1,10 +1,17 @@
 {{define "layout"}}<!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{block "title" .}}ShushTLS{{end}}</title>
   <link rel="icon" href="/static/favicon.ico">
+  <script>
+    (function(){
+      var s = localStorage.getItem('pico-theme');
+      var t = (s === 'dark' || s === 'light') ? s : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
   <link rel="stylesheet" href="/static/pico.min.css">
   <style>
     /* Minimal overrides — keep Pico.css doing the heavy lifting. */
@@ -29,6 +36,7 @@
     }
     .copy-btn:hover { color: #333; border-color: #333; }
     .copy-btn.copied { color: #2ecc40; border-color: #2ecc40; }
+    .theme-toggle { margin-left: 0.5rem; }
   </style>
 </head>
 <body>
@@ -38,12 +46,16 @@
         <li><a href="/" class="brand">🤫 <strong>ShushTLS</strong></a></li>
       </ul>
       <ul>
-        <li><a href="/"{{if eq .ActiveNav "home"}} aria-current="page"{{end}}>Status</a></li>
-        <li><a href="/setup"{{if eq .ActiveNav "setup"}} aria-current="page"{{end}}>Setup</a></li>
+        {{if eq .State "uninitialized"}}
+        <li><a href="/"{{if eq .ActiveNav "setup"}} aria-current="page"{{end}}>Setup</a></li>
+        <li><a href="/trust"{{if eq .ActiveNav "trust"}} aria-current="page"{{end}}>Install CA</a></li>
+        {{else}}
+        <li><a href="/"{{if eq .ActiveNav "trust"}} aria-current="page"{{end}}>Install CA</a></li>
+        {{end}}
         <li><a href="/certificates"{{if eq .ActiveNav "certificates"}} aria-current="page"{{end}}>Certificates</a></li>
-        <li><a href="/trust"{{if eq .ActiveNav "trust"}} aria-current="page"{{end}}>Trust</a></li>
         <li><a href="/docs"{{if eq .ActiveNav "docs"}} aria-current="page"{{end}}>Docs</a></li>
         <li><a href="/settings"{{if eq .ActiveNav "settings"}} aria-current="page"{{end}}>Settings</a></li>
+        <li><button type="button" id="theme-toggle" class="outline secondary theme-toggle" aria-label="Toggle light/dark theme">Theme</button></li>
       </ul>
     </nav>
   </header>

@@ -1,10 +1,11 @@
 {{define "title"}}ShushTLS — Settings{{end}}
 {{define "content"}}
 <h1>Settings</h1>
+<p>Optional HTTP Basic Auth. When enabled, you need a username and password to initialize, issue certificates, or change the service cert. Downloading the root CA and listing certificates stay open so install scripts and new devices can get the root without credentials.</p>
 
 {{if eq .State "uninitialized"}}
 <article>
-  <p>ShushTLS must be initialized before settings can be configured. <a href="/setup">Run setup first.</a></p>
+  <p>ShushTLS must be initialized before settings can be configured. <a href="/">Run Setup first</a>.</p>
 </article>
 {{else}}
 

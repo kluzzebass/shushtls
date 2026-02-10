@@ -48,7 +48,7 @@
           // Give the server a moment to activate HTTPS, then redirect.
           // HTTP is now in redirect mode, so this navigates via HTTPS.
           setTimeout(function () {
-            window.location.href = "/trust";
+            window.location.href = "/";
           }, 1000);
         } else {
           showError(initResult, data.error || "Initialization failed.");
@@ -267,5 +267,23 @@
     var div = document.createElement("div");
     div.appendChild(document.createTextNode(str));
     return div.innerHTML;
+  }
+
+  // --- Theme toggle (Pico light/dark) ---
+  var themeToggle = document.getElementById("theme-toggle");
+  if (themeToggle) {
+    function currentTheme() {
+      return document.documentElement.getAttribute("data-theme") || "light";
+    }
+    function setTheme(theme) {
+      document.documentElement.setAttribute("data-theme", theme);
+      try { localStorage.setItem("pico-theme", theme); } catch (e) {}
+      themeToggle.textContent = theme === "light" ? "Dark" : "Light";
+      themeToggle.setAttribute("aria-label", theme === "light" ? "Switch to dark theme" : "Switch to light theme");
+    }
+    setTheme(currentTheme());
+    themeToggle.addEventListener("click", function () {
+      setTheme(currentTheme() === "light" ? "dark" : "light");
+    });
   }
 })();

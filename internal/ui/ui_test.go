@@ -50,9 +50,9 @@ func doGet(t *testing.T, mux *http.ServeMux, path string) *httptest.ResponseReco
 	return w
 }
 
-// --- Home page tests ---
+// --- Home (contextual: Setup when uninitialized, Install CA when ready) ---
 
-func TestHome_Uninitialized(t *testing.T) {
+func TestHome_Uninitialized_ShowsSetup(t *testing.T) {
 	h, _ := newTestHandler(t)
 	mux := serveMux(h)
 
@@ -61,13 +61,12 @@ func TestHome_Uninitialized(t *testing.T) {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 	body := w.Body.String()
-	assertContains(t, body, "uninitialized")
-	assertContains(t, body, "Welcome to ShushTLS")
-	assertContains(t, body, "/setup")
+	assertContains(t, body, "Setup")
+	assertContains(t, body, "Initialize ShushTLS")
 	assertContentType(t, w, "text/html")
 }
 
-func TestHome_Ready(t *testing.T) {
+func TestHome_Ready_ShowsInstallCA(t *testing.T) {
 	h, _ := newInitializedHandler(t)
 	mux := serveMux(h)
 
@@ -76,9 +75,10 @@ func TestHome_Ready(t *testing.T) {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 	body := w.Body.String()
-	assertContains(t, body, "ready")
-	assertContains(t, body, "Root CA")
-	assertContains(t, body, "shushtls.test")
+	assertContains(t, body, "Install root CA")
+	assertContains(t, body, "Download Root CA")
+	assertContains(t, body, "macOS")
+	assertContentType(t, w, "text/html")
 }
 
 // --- Setup page tests ---
@@ -98,16 +98,17 @@ func TestSetup_Uninitialized(t *testing.T) {
 	assertContentType(t, w, "text/html")
 }
 
-func TestSetup_AlreadyInitialized(t *testing.T) {
+func TestSetup_AlreadyInitialized_RedirectsToHome(t *testing.T) {
 	h, _ := newInitializedHandler(t)
 	mux := serveMux(h)
 
 	w := doGet(t, mux, "/setup")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
+	if w.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302", w.Code)
 	}
-	body := w.Body.String()
-	assertContains(t, body, "Already initialized")
+	if loc := w.Header().Get("Location"); loc != "/" {
+		t.Errorf("Location = %q, want /", loc)
+	}
 }
 
 // --- Trust page tests ---
@@ -122,7 +123,7 @@ func TestTrust_Uninitialized(t *testing.T) {
 	}
 	body := w.Body.String()
 	assertContains(t, body, "not been generated yet")
-	assertContains(t, body, "/setup")
+	assertContains(t, body, "Run Setup first")
 }
 
 func TestTrust_Initialized(t *testing.T) {
@@ -181,13 +182,14 @@ func TestNavigation_ActivePageHighlighted(t *testing.T) {
 	h, _ := newTestHandler(t)
 	mux := serveMux(h)
 
+	// When uninitialized, / shows Setup; /setup shows Setup; both highlight Setup.
 	tests := []struct {
 		path    string
 		current string
 	}{
-		{"/", "Status"},
+		{"/", "Setup"},
 		{"/setup", "Setup"},
-		{"/trust", "Trust"},
+		{"/trust", "Install CA"},
 		{"/certificates", "Certificates"},
 		{"/docs", "Docs"},
 	}
