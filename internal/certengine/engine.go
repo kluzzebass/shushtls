@@ -14,12 +14,23 @@ type CertListItem struct {
 	DNSNames   []string
 }
 
-// NotAfter returns the cert expiry for display; zero time means "generated on download".
+// NotAfter returns the cert expiry for display; zero time means no stored cert.
 func (c *CertListItem) NotAfter() time.Time {
 	if c.Leaf != nil && c.Leaf.Cert != nil {
 		return c.Leaf.Cert.NotAfter
 	}
 	return time.Time{}
+}
+
+// DisplayNotAfter returns the expiry date to show in the UI/API. For stored certs
+// it is the actual NotAfter; for on-demand certs it is the expiry that would apply
+// if a cert were generated now (now + SC-081 max validity).
+func (c *CertListItem) DisplayNotAfter() time.Time {
+	if c.Leaf != nil && c.Leaf.Cert != nil {
+		return c.Leaf.Cert.NotAfter
+	}
+	now := time.Now()
+	return now.Add(SC081MaxLeafValidity(now))
 }
 
 // State represents the initialization state of the certificate engine.

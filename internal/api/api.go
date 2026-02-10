@@ -715,7 +715,7 @@ func leafInfo(leaf *certengine.LeafCert) LeafCertInfo {
 }
 
 // leafInfoFromItem builds LeafCertInfo from a CertListItem (stored or on-demand).
-// On-demand certs show "On download" for NotAfter.
+// DisplayNotAfter gives actual expiry for stored certs, or "if issued now" for on-demand.
 func leafInfoFromItem(item *certengine.CertListItem) LeafCertInfo {
 	info := LeafCertInfo{
 		PrimarySAN: item.PrimarySAN,
@@ -723,11 +723,8 @@ func leafInfoFromItem(item *certengine.CertListItem) LeafCertInfo {
 	}
 	if item.Leaf != nil && item.Leaf.Cert != nil {
 		info.NotBefore = item.Leaf.Cert.NotBefore.UTC().Format("2006-01-02T15:04:05Z")
-		info.NotAfter = item.Leaf.Cert.NotAfter.UTC().Format("2006-01-02T15:04:05Z")
-	} else {
-		info.NotBefore = ""
-		info.NotAfter = "On download"
 	}
+	info.NotAfter = item.DisplayNotAfter().UTC().Format("2006-01-02T15:04:05Z")
 	return info
 }
 

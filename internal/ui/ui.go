@@ -236,10 +236,8 @@ func buildCertInfoFromItem(item *certengine.CertListItem, serviceHost string) ce
 	}
 	if item.Leaf != nil && item.Leaf.Cert != nil {
 		ci.NotBefore = item.Leaf.Cert.NotBefore.UTC().Format("2006-01-02")
-		ci.NotAfter = item.Leaf.Cert.NotAfter.UTC().Format("2006-01-02")
-	} else {
-		ci.NotAfter = "On download"
 	}
+	ci.NotAfter = item.DisplayNotAfter().UTC().Format("2006-01-02")
 	return ci
 }
 
