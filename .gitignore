@@ -12,8 +12,7 @@
 *.test
 *.out
 
-# Vendor (if not committed)
-/vendor/
+# Vendor is committed for reproducible builds.
 
 # ShushTLS state (runtime data, never commit)
 /state/
