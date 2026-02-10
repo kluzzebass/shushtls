@@ -19,6 +19,15 @@
     .state-badge[data-state="initialized"]   { background: #ff851b; color: #fff; }
     .state-badge[data-state="uninitialized"] { background: #aaa;    color: #fff; }
     footer { text-align: center; font-size: 0.85em; opacity: 0.7; }
+    pre { position: relative; }
+    .copy-btn {
+      position: absolute; top: 0.4em; right: 0.4em;
+      background: none; border: 1px solid #888; border-radius: 4px;
+      padding: 0.15em 0.4em; cursor: pointer; font-size: 0.8em;
+      color: #888; line-height: 1;
+    }
+    .copy-btn:hover { color: #333; border-color: #333; }
+    .copy-btn.copied { color: #2ecc40; border-color: #2ecc40; }
   </style>
 </head>
 <body>

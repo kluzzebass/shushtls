@@ -205,6 +205,28 @@
     });
   }
 
+  // --- Copy-to-clipboard buttons on <pre><code> blocks ---
+
+  document.querySelectorAll("pre > code").forEach(function (code) {
+    var pre = code.parentElement;
+    var btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.textContent = "\u2398"; // clipboard icon
+    btn.title = "Copy to clipboard";
+    btn.addEventListener("click", function () {
+      var text = code.textContent;
+      navigator.clipboard.writeText(text).then(function () {
+        btn.textContent = "\u2713"; // checkmark
+        btn.classList.add("copied");
+        setTimeout(function () {
+          btn.textContent = "\u2398";
+          btn.classList.remove("copied");
+        }, 1500);
+      });
+    });
+    pre.appendChild(btn);
+  });
+
   // --- Helpers ---
 
   function showError(el, msg) {
