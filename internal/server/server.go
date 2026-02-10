@@ -159,6 +159,7 @@ func (s *Server) Run(ctx context.Context) error {
 		s.shutdownAll(httpSrv, httpsSrv)
 		return err
 	case <-ctx.Done():
+		s.logger.Info("shutdown signal received")
 		return s.shutdownAll(httpSrv, httpsSrv)
 	}
 }

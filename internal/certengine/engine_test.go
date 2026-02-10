@@ -336,47 +336,51 @@ func TestEngine_IssueCertEmptyNames(t *testing.T) {
 func TestEngine_IssueFQDNCert(t *testing.T) {
 	e := initEngine(t)
 
-	leaf, err := e.IssueCert([]string{"nas.home.arpa"})
+	item, err := e.IssueCert([]string{"nas.home.arpa"})
 	if err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
-	if leaf.PrimarySAN() != "nas.home.arpa" {
-		t.Errorf("PrimarySAN = %q, want %q", leaf.PrimarySAN(), "nas.home.arpa")
+	if item.PrimarySAN != "nas.home.arpa" {
+		t.Errorf("PrimarySAN = %q, want %q", item.PrimarySAN, "nas.home.arpa")
 	}
 
-	// Should be retrievable by primary SAN.
+	// Should be retrievable by primary SAN (generated on demand).
 	got := e.GetCert("nas.home.arpa")
 	if got == nil {
 		t.Fatal("GetCert returned nil")
 	}
-	if got.Cert.SerialNumber.Cmp(leaf.Cert.SerialNumber) != 0 {
-		t.Error("GetCert returned different cert")
+	if got.PrimarySAN() != "nas.home.arpa" {
+		t.Errorf("GetCert PrimarySAN = %q, want nas.home.arpa", got.PrimarySAN())
 	}
 }
 
 func TestEngine_IssueWildcardCert(t *testing.T) {
 	e := initEngine(t)
 
-	leaf, err := e.IssueCert([]string{"*.home.arpa"})
+	item, err := e.IssueCert([]string{"*.home.arpa"})
 	if err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
-	if leaf.PrimarySAN() != "*.home.arpa" {
-		t.Errorf("PrimarySAN = %q, want %q", leaf.PrimarySAN(), "*.home.arpa")
+	if item.PrimarySAN != "*.home.arpa" {
+		t.Errorf("PrimarySAN = %q, want %q", item.PrimarySAN, "*.home.arpa")
 	}
 
-	// Wildcard should expand to include bare domain.
+	// Wildcard config should expand to include bare domain.
 	hasBare := false
-	for _, name := range leaf.Cert.DNSNames {
+	for _, name := range item.DNSNames {
 		if name == "home.arpa" {
 			hasBare = true
 		}
 	}
 	if !hasBare {
-		t.Errorf("wildcard cert missing bare domain SAN, got %v", leaf.Cert.DNSNames)
+		t.Errorf("wildcard config missing bare domain SAN, got %v", item.DNSNames)
 	}
 
-	// Should verify for subdomains.
+	// GetCert generates a cert on the fly; it should verify for subdomains.
+	leaf := e.GetCert("*.home.arpa")
+	if leaf == nil {
+		t.Fatal("GetCert returned nil")
+	}
 	pool := x509.NewCertPool()
 	pool.AddCert(e.CA().Cert)
 	for _, name := range []string{"foo.home.arpa", "bar.home.arpa"} {
@@ -419,25 +423,25 @@ func TestEngine_IssueMultipleCerts(t *testing.T) {
 func TestEngine_IssueCertIsIdempotentPerSAN(t *testing.T) {
 	e := initEngine(t)
 
-	leaf1, err := e.IssueCert([]string{"nas.home.arpa"})
+	item1, err := e.IssueCert([]string{"nas.home.arpa"})
 	if err != nil {
 		t.Fatalf("first IssueCert: %v", err)
 	}
-	leaf2, err := e.IssueCert([]string{"nas.home.arpa"})
+	item2, err := e.IssueCert([]string{"nas.home.arpa"})
 	if err != nil {
 		t.Fatalf("second IssueCert: %v", err)
 	}
-	if leaf1.Cert.SerialNumber.Cmp(leaf2.Cert.SerialNumber) != 0 {
-		t.Error("second IssueCert returned a different cert (not idempotent)")
+	if item1.PrimarySAN != item2.PrimarySAN {
+		t.Error("second IssueCert returned different PrimarySAN (not idempotent)")
 	}
 
-	// Different SAN should produce a different cert.
-	leaf3, err := e.IssueCert([]string{"pihole.home.arpa"})
+	// Different SAN should produce a different list entry.
+	item3, err := e.IssueCert([]string{"pihole.home.arpa"})
 	if err != nil {
 		t.Fatalf("IssueCert (different SAN): %v", err)
 	}
-	if leaf3.Cert.SerialNumber.Cmp(leaf1.Cert.SerialNumber) == 0 {
-		t.Error("different SAN produced the same cert")
+	if item3.PrimarySAN == item1.PrimarySAN {
+		t.Error("different SAN produced the same PrimarySAN")
 	}
 }
 
@@ -462,8 +466,6 @@ func TestEngine_ReloadFromDisk(t *testing.T) {
 
 	caSerial := e1.CA().Cert.SerialNumber
 	svcSerial := e1.ServiceCert().Cert.SerialNumber
-	wildSerial := e1.GetCert("*.home.arpa").Cert.SerialNumber
-	nasSerial := e1.GetCert("nas.home.arpa").Cert.SerialNumber
 
 	// Create a new engine from the same directory.
 	e2, err := New(dir)
@@ -476,15 +478,16 @@ func TestEngine_ReloadFromDisk(t *testing.T) {
 		t.Error("reloaded CA has different serial")
 	}
 
-	// All certs should reload.
+	// List: service cert (stored) + wildcard + nas (registered; certs generated on demand).
 	if len(e2.ListCerts()) != 3 {
 		t.Errorf("reloaded engine has %d certs, want 3", len(e2.ListCerts()))
 	}
-	if e2.GetCert("*.home.arpa").Cert.SerialNumber.Cmp(wildSerial) != 0 {
-		t.Error("reloaded wildcard has different serial")
+	// GetCert for registered SANs generates on the fly; we only check they return non-nil.
+	if e2.GetCert("*.home.arpa") == nil {
+		t.Error("reloaded: GetCert(*.home.arpa) returned nil")
 	}
-	if e2.GetCert("nas.home.arpa").Cert.SerialNumber.Cmp(nasSerial) != 0 {
-		t.Error("reloaded NAS cert has different serial")
+	if e2.GetCert("nas.home.arpa") == nil {
+		t.Error("reloaded: GetCert(nas.home.arpa) returned nil")
 	}
 
 	// Service cert needs SetServiceHost after reload to re-associate.
@@ -576,9 +579,12 @@ func TestCA_ValidityPeriod(t *testing.T) {
 func TestLeafCert_SignedByCA(t *testing.T) {
 	e := initEngine(t)
 
-	leaf, err := e.IssueCert([]string{"nas.home.arpa"})
-	if err != nil {
+	if _, err := e.IssueCert([]string{"nas.home.arpa"}); err != nil {
 		t.Fatalf("IssueCert: %v", err)
+	}
+	leaf := e.GetCert("nas.home.arpa")
+	if leaf == nil {
+		t.Fatal("GetCert returned nil")
 	}
 
 	pool := x509.NewCertPool()
@@ -590,7 +596,13 @@ func TestLeafCert_SignedByCA(t *testing.T) {
 
 func TestLeafCert_NotCA(t *testing.T) {
 	e := initEngine(t)
-	leaf, _ := e.IssueCert([]string{"nas.home.arpa"})
+	if _, err := e.IssueCert([]string{"nas.home.arpa"}); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+	leaf := e.GetCert("nas.home.arpa")
+	if leaf == nil {
+		t.Fatal("GetCert returned nil")
+	}
 	if leaf.Cert.IsCA {
 		t.Error("leaf cert should not be a CA")
 	}
@@ -599,7 +611,13 @@ func TestLeafCert_NotCA(t *testing.T) {
 func TestLeafCert_SANsMatchRequested(t *testing.T) {
 	e := initEngine(t)
 
-	leaf, _ := e.IssueCert([]string{"nas.home.arpa", "backup.home.arpa"})
+	if _, err := e.IssueCert([]string{"nas.home.arpa", "backup.home.arpa"}); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+	leaf := e.GetCert("nas.home.arpa")
+	if leaf == nil {
+		t.Fatal("GetCert returned nil")
+	}
 	want := map[string]bool{"nas.home.arpa": true, "backup.home.arpa": true}
 	got := make(map[string]bool)
 	for _, name := range leaf.Cert.DNSNames {
@@ -614,7 +632,13 @@ func TestLeafCert_SANsMatchRequested(t *testing.T) {
 
 func TestLeafCert_KeyUsages(t *testing.T) {
 	e := initEngine(t)
-	leaf, _ := e.IssueCert([]string{"nas.home.arpa"})
+	if _, err := e.IssueCert([]string{"nas.home.arpa"}); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+	leaf := e.GetCert("nas.home.arpa")
+	if leaf == nil {
+		t.Fatal("GetCert returned nil")
+	}
 
 	if leaf.Cert.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
 		t.Error("leaf cert missing DigitalSignature key usage")
@@ -626,7 +650,13 @@ func TestLeafCert_KeyUsages(t *testing.T) {
 
 func TestLeafCert_ExtKeyUsage(t *testing.T) {
 	e := initEngine(t)
-	leaf, _ := e.IssueCert([]string{"nas.home.arpa"})
+	if _, err := e.IssueCert([]string{"nas.home.arpa"}); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+	leaf := e.GetCert("nas.home.arpa")
+	if leaf == nil {
+		t.Fatal("GetCert returned nil")
+	}
 
 	found := false
 	for _, eku := range leaf.Cert.ExtKeyUsage {
@@ -642,10 +672,16 @@ func TestLeafCert_ExtKeyUsage(t *testing.T) {
 
 func TestLeafCert_ValidityPeriod(t *testing.T) {
 	e := initEngine(t)
-	leaf, _ := e.IssueCert([]string{"nas.home.arpa"})
+	if _, err := e.IssueCert([]string{"nas.home.arpa"}); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+	leaf := e.GetCert("nas.home.arpa")
+	if leaf == nil {
+		t.Fatal("GetCert returned nil")
+	}
 
 	duration := leaf.Cert.NotAfter.Sub(leaf.Cert.NotBefore)
-	expected := LeafCertValidity
+	expected := SC081MaxLeafValidity(time.Now())
 	if abs(duration-expected) > 24*time.Hour {
 		t.Errorf("leaf validity = %v, want ~%v", duration, expected)
 	}
@@ -1025,14 +1061,14 @@ func TestLeafCert_PrimarySAN(t *testing.T) {
 
 	// FQDN cert
 	fqdn, _ := e.IssueCert([]string{"nas.home.arpa", "backup.home.arpa"})
-	if fqdn.PrimarySAN() != "nas.home.arpa" {
-		t.Errorf("FQDN PrimarySAN = %q, want %q", fqdn.PrimarySAN(), "nas.home.arpa")
+	if fqdn.PrimarySAN != "nas.home.arpa" {
+		t.Errorf("FQDN PrimarySAN = %q, want %q", fqdn.PrimarySAN, "nas.home.arpa")
 	}
 
 	// Wildcard cert
 	wild, _ := e.IssueCert([]string{"*.home.arpa"})
-	if wild.PrimarySAN() != "*.home.arpa" {
-		t.Errorf("wildcard PrimarySAN = %q, want %q", wild.PrimarySAN(), "*.home.arpa")
+	if wild.PrimarySAN != "*.home.arpa" {
+		t.Errorf("wildcard PrimarySAN = %q, want %q", wild.PrimarySAN, "*.home.arpa")
 	}
 }
 

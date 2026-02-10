@@ -31,7 +31,7 @@ func (l *LeafCert) PrimarySAN() string {
 
 // IssueCertificate generates a leaf certificate with the given DNS names,
 // signed by the provided CA. The first name in dnsNames becomes the
-// primary SAN and the certificate's CommonName.
+// primary SAN and the certificate's CommonName. Validity uses LeafCertValidity.
 //
 // If any name contains a wildcard (e.g. "*.home.arpa"), the bare domain
 // is automatically added as an additional SAN if not already present.
@@ -39,6 +39,12 @@ func (l *LeafCert) PrimarySAN() string {
 // This is the single entry point for all leaf certificate issuance —
 // both wildcards and FQDNs.
 func IssueCertificate(ca *CACert, dnsNames []string) (*LeafCert, error) {
+	return IssueCertificateWithValidity(ca, dnsNames, LeafCertValidity)
+}
+
+// IssueCertificateWithValidity is like IssueCertificate but uses the given
+// validity duration (e.g. SC081MaxLeafValidity(time.Now()) for browser-accepted certs).
+func IssueCertificateWithValidity(ca *CACert, dnsNames []string, validity time.Duration) (*LeafCert, error) {
 	if len(dnsNames) == 0 {
 		return nil, fmt.Errorf("at least one DNS name is required")
 	}
@@ -84,7 +90,7 @@ func IssueCertificate(ca *CACert, dnsNames []string) (*LeafCert, error) {
 		},
 		DNSNames:              expanded,
 		NotBefore:             now,
-		NotAfter:              now.Add(LeafCertValidity),
+		NotAfter:              now.Add(validity),
 		KeyUsage:              LeafKeyUsages,
 		ExtKeyUsage:           LeafExtKeyUsages,
 		BasicConstraintsValid: true,

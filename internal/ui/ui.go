@@ -141,8 +141,8 @@ func (h *Handler) buildPageData(r *http.Request, activeNav string) pageData {
 		pd.RootCA = buildCAInfo(ca.Cert)
 	}
 
-	for _, leaf := range h.engine.ListCerts() {
-		pd.Certs = append(pd.Certs, buildCertInfo(leaf, h.engine.ServiceHost()))
+	for _, item := range h.engine.ListCerts() {
+		pd.Certs = append(pd.Certs, buildCertInfoFromItem(item, h.engine.ServiceHost()))
 	}
 
 	return pd
@@ -226,6 +226,21 @@ func buildCertInfo(leaf *certengine.LeafCert, serviceHost string) certInfo {
 		NotAfter:   leaf.Cert.NotAfter.UTC().Format("2006-01-02"),
 		IsService:  leaf.PrimarySAN() == serviceHost,
 	}
+}
+
+func buildCertInfoFromItem(item *certengine.CertListItem, serviceHost string) certInfo {
+	ci := certInfo{
+		PrimarySAN: item.PrimarySAN,
+		DNSNames:   item.DNSNames,
+		IsService:  item.PrimarySAN == serviceHost,
+	}
+	if item.Leaf != nil && item.Leaf.Cert != nil {
+		ci.NotBefore = item.Leaf.Cert.NotBefore.UTC().Format("2006-01-02")
+		ci.NotAfter = item.Leaf.Cert.NotAfter.UTC().Format("2006-01-02")
+	} else {
+		ci.NotAfter = "On download"
+	}
+	return ci
 }
 
 func fingerprint(cert *x509.Certificate) string {

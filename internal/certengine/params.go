@@ -8,6 +8,30 @@ import (
 	"time"
 )
 
+// SC-081 cutoff dates (CA/Browser Forum ballot): max leaf validity steps down over time.
+var (
+	sc081Step1 = time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC) // until: 398 days
+	sc081Step2 = time.Date(2027, 3, 15, 0, 0, 0, 0, time.UTC) // until: 200 days
+	sc081Step3 = time.Date(2029, 3, 15, 0, 0, 0, 0, time.UTC) // until: 100 days
+	// after step3: 47 days
+)
+
+// SC081MaxLeafValidity returns the maximum leaf certificate validity allowed
+// by CA/Browser Forum ballot SC-081 on the given date.
+func SC081MaxLeafValidity(at time.Time) time.Duration {
+	u := at.UTC()
+	switch {
+	case u.Before(sc081Step1):
+		return 398 * 24 * time.Hour
+	case u.Before(sc081Step2):
+		return 200 * 24 * time.Hour
+	case u.Before(sc081Step3):
+		return 100 * 24 * time.Hour
+	default:
+		return 47 * 24 * time.Hour
+	}
+}
+
 // Key algorithm. ShushTLS uses ECDSA P-256 for all keys. It's fast, compact,
 // and universally supported by modern TLS stacks and browsers.
 const (

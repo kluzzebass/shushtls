@@ -211,9 +211,9 @@ func (h *Handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 		resp.RootCA = certInfo(ca.Cert)
 	}
 
-	for _, leaf := range h.engine.ListCerts() {
-		info := leafInfo(leaf)
-		info.IsService = leaf.PrimarySAN() == h.engine.ServiceHost()
+	for _, item := range h.engine.ListCerts() {
+		info := leafInfoFromItem(item)
+		info.IsService = item.PrimarySAN == h.engine.ServiceHost()
 		resp.Certs = append(resp.Certs, info)
 	}
 
@@ -288,12 +288,12 @@ func (h *Handler) handleCACert(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/certificates
 func (h *Handler) handleListCerts(w http.ResponseWriter, r *http.Request) {
-	certs := h.engine.ListCerts()
+	items := h.engine.ListCerts()
 
 	var infos []LeafCertInfo
-	for _, leaf := range certs {
-		info := leafInfo(leaf)
-		info.IsService = leaf.PrimarySAN() == h.engine.ServiceHost()
+	for _, item := range items {
+		info := leafInfoFromItem(item)
+		info.IsService = item.PrimarySAN == h.engine.ServiceHost()
 		infos = append(infos, info)
 	}
 
@@ -324,16 +324,16 @@ func (h *Handler) handleIssueCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	leaf, err := h.engine.IssueCert(req.DNSNames)
+	item, err := h.engine.IssueCert(req.DNSNames)
 	if err != nil {
 		h.internalError(w, "certificate issuance failed", err)
 		return
 	}
 
-	info := leafInfo(leaf)
-	info.IsService = leaf.PrimarySAN() == h.engine.ServiceHost()
+	info := leafInfoFromItem(item)
+	info.IsService = item.PrimarySAN == h.engine.ServiceHost()
 
-	h.logger.Info("certificate issued", "primarySAN", leaf.PrimarySAN())
+	h.logger.Info("certificate issued", "primarySAN", item.PrimarySAN)
 	writeJSON(w, http.StatusOK, IssueCertResponse{
 		Cert:    info,
 		Message: "Certificate issued successfully.",
@@ -712,6 +712,23 @@ func leafInfo(leaf *certengine.LeafCert) LeafCertInfo {
 		NotBefore:  leaf.Cert.NotBefore.UTC().Format("2006-01-02T15:04:05Z"),
 		NotAfter:   leaf.Cert.NotAfter.UTC().Format("2006-01-02T15:04:05Z"),
 	}
+}
+
+// leafInfoFromItem builds LeafCertInfo from a CertListItem (stored or on-demand).
+// On-demand certs show "On download" for NotAfter.
+func leafInfoFromItem(item *certengine.CertListItem) LeafCertInfo {
+	info := LeafCertInfo{
+		PrimarySAN: item.PrimarySAN,
+		DNSNames:   item.DNSNames,
+	}
+	if item.Leaf != nil && item.Leaf.Cert != nil {
+		info.NotBefore = item.Leaf.Cert.NotBefore.UTC().Format("2006-01-02T15:04:05Z")
+		info.NotAfter = item.Leaf.Cert.NotAfter.UTC().Format("2006-01-02T15:04:05Z")
+	} else {
+		info.NotBefore = ""
+		info.NotAfter = "On download"
+	}
+	return info
 }
 
 func fingerprint(cert *x509.Certificate) string {

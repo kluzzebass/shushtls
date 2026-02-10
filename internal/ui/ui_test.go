@@ -76,7 +76,7 @@ func TestHome_Ready_ShowsInstallCA(t *testing.T) {
 	}
 	body := w.Body.String()
 	assertContains(t, body, "Install root CA")
-	assertContains(t, body, "Download Root CA")
+	assertContains(t, body, "download the root CA")
 	assertContains(t, body, "macOS")
 	assertContentType(t, w, "text/html")
 }
@@ -135,7 +135,7 @@ func TestTrust_Initialized(t *testing.T) {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 	body := w.Body.String()
-	assertContains(t, body, "Download Root CA")
+	assertContains(t, body, "download the root CA")
 	assertContains(t, body, "macOS")
 	assertContains(t, body, "Linux")
 	assertContains(t, body, "Windows")

@@ -35,8 +35,9 @@ const (
 	caKeyFile  = "ca-key.pem"
 	caCertFile = "ca-cert.pem"
 
-	leafKeyFile  = "key.pem"
-	leafCertFile = "cert.pem"
+	leafKeyFile   = "key.pem"
+	leafCertFile  = "cert.pem"
+	leafDNSNames  = "dns_names" // SAN config only (cert generated on download)
 
 	dirPerms     = 0700
 	keyFilePerms = 0600
@@ -194,6 +195,68 @@ func (s *Store) HasCert(primarySAN string) bool {
 	dir := s.certDir(primarySAN)
 	return fileExists(filepath.Join(dir, leafKeyFile)) &&
 		fileExists(filepath.Join(dir, leafCertFile))
+}
+
+// SaveSANConfig persists only the SAN config (primary + DNS names) for
+// on-demand cert generation. No key or cert is stored — certs are generated on download.
+func (s *Store) SaveSANConfig(primarySAN string, dnsNames []string) error {
+	if len(dnsNames) == 0 {
+		return fmt.Errorf("at least one DNS name is required")
+	}
+	dir := s.certDir(primarySAN)
+	if err := os.MkdirAll(dir, dirPerms); err != nil {
+		return fmt.Errorf("create cert directory for %s: %w", primarySAN, err)
+	}
+	path := filepath.Join(dir, leafDNSNames)
+	body := strings.Join(dnsNames, "\n")
+	return writeFileAtomic(path, []byte(body), certPerms)
+}
+
+// LoadSANConfig loads the persisted SAN config (DNS names) for a primary SAN.
+// Returns nil, nil if no config exists.
+func (s *Store) LoadSANConfig(primarySAN string) ([]string, error) {
+	path := filepath.Join(s.certDir(primarySAN), leafDNSNames)
+	if !fileExists(path) {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read SAN config for %s: %w", primarySAN, err)
+	}
+	var names []string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			names = append(names, line)
+		}
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+	return names, nil
+}
+
+// LoadAllSANConfigs returns all primary SANs that have a SAN config (dns_names)
+// on disk. Used to list registered SANs for on-demand issuance.
+func (s *Store) LoadAllSANConfigs() (map[string][]string, error) {
+	certsDir := filepath.Join(s.dir, certDirName)
+	entries, err := os.ReadDir(certsDir)
+	if err != nil {
+		return nil, fmt.Errorf("read certs directory: %w", err)
+	}
+	out := make(map[string][]string)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		san := UnsanitizeSAN(entry.Name())
+		names, err := s.LoadSANConfig(san)
+		if err != nil || names == nil {
+			continue
+		}
+		out[san] = names
+	}
+	return out, nil
 }
 
 // CertPaths returns the file paths to a certificate's cert and key files.
