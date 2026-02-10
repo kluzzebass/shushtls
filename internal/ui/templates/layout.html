@@ -29,12 +29,12 @@
         <li><a href="/trust"{{if eq .ActiveNav "trust"}} aria-current="page"{{end}}>Install CA</a></li>
         {{else}}
         <li><a href="/"{{if eq .ActiveNav "trust"}} aria-current="page"{{end}}>Install CA</a></li>
-        {{end}}
         <li><a href="/certificates"{{if eq .ActiveNav "certificates"}} aria-current="page"{{end}}>Certificates</a></li>
         <li><a href="/docs"{{if eq .ActiveNav "docs"}} aria-current="page"{{end}}>Docs</a></li>
         <li><a href="/settings"{{if eq .ActiveNav "settings"}} aria-current="page"{{end}}>Settings</a></li>
         <li><a href="/about"{{if eq .ActiveNav "about"}} aria-current="page"{{end}}>About</a></li>
         <li><button type="button" id="theme-toggle" class="outline secondary theme-toggle" aria-label="Toggle light/dark theme">Theme</button></li>
+        {{end}}
       </ul>
     </nav>
   </header>
