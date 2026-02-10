@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"shushtls/internal/auth"
 	"shushtls/internal/certengine"
 )
 
@@ -23,7 +24,7 @@ func newTestHandler(t *testing.T) (*Handler, *certengine.Engine) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	hosts := []string{"shushtls.test", "localhost"}
-	h := NewHandler(engine, hosts, logger, nil)
+	h := NewHandler(engine, hosts, logger, nil, nil)
 	return h, engine
 }
 
@@ -709,5 +710,226 @@ func TestCACert_WrongMethod(t *testing.T) {
 	w := doRequest(t, mux, "DELETE", "/api/ca/root.pem", "")
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405\nbody: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAuth_WrongMethod(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "GET", "/api/auth", "")
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405\nbody: %s", w.Code, w.Body.String())
+	}
+}
+
+// --- Authentication ---
+
+func newAuthHandler(t *testing.T) (*Handler, *certengine.Engine, *auth.Store) {
+	t.Helper()
+	dir := t.TempDir()
+	engine, err := certengine.New(dir)
+	if err != nil {
+		t.Fatalf("certengine.New: %v", err)
+	}
+	authStore, err := auth.NewStore(dir)
+	if err != nil {
+		t.Fatalf("auth.NewStore: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	hosts := []string{"shushtls.test", "localhost"}
+	h := NewHandler(engine, hosts, logger, nil, authStore)
+	return h, engine, authStore
+}
+
+func newInitializedAuthHandler(t *testing.T) (*Handler, *certengine.Engine, *auth.Store) {
+	t.Helper()
+	h, engine, authStore := newAuthHandler(t)
+	if _, err := engine.Initialize([]string{"shushtls.test", "localhost"}, certengine.CAParams{}); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	return h, engine, authStore
+}
+
+func doAuthRequest(t *testing.T, mux *http.ServeMux, method, path, body, user, pass string) *httptest.ResponseRecorder {
+	t.Helper()
+	var bodyReader io.Reader
+	if body != "" {
+		bodyReader = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, path, bodyReader)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if user != "" || pass != "" {
+		req.SetBasicAuth(user, pass)
+	}
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	return w
+}
+
+func TestAuth_EnableAndProtect(t *testing.T) {
+	h, _, _ := newInitializedAuthHandler(t)
+	mux := serveMux(h)
+
+	// Enable auth.
+	w := doRequest(t, mux, "POST", "/api/auth",
+		`{"enabled": true, "username": "admin", "password": "secret123"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("enable auth: status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	// Protected endpoint without creds should 401.
+	w = doRequest(t, mux, "GET", "/api/status", "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("unauthed status: got %d, want 401", w.Code)
+	}
+
+	// Protected endpoint with wrong creds should 401.
+	w = doAuthRequest(t, mux, "GET", "/api/status", "", "admin", "wrong")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("bad creds status: got %d, want 401", w.Code)
+	}
+
+	// Protected endpoint with correct creds should 200.
+	w = doAuthRequest(t, mux, "GET", "/api/status", "", "admin", "secret123")
+	if w.Code != http.StatusOK {
+		t.Errorf("good creds status: got %d, want 200", w.Code)
+	}
+}
+
+func TestAuth_UnprotectedEndpoints(t *testing.T) {
+	h, engine, _ := newInitializedAuthHandler(t)
+	mux := serveMux(h)
+
+	// Issue a cert so we have something to list/download.
+	if _, err := engine.IssueCert([]string{"nas.local"}); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+
+	// Enable auth.
+	w := doRequest(t, mux, "POST", "/api/auth",
+		`{"enabled": true, "username": "admin", "password": "s3cret"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("enable auth: status = %d", w.Code)
+	}
+
+	// These should remain accessible without creds.
+	unprotected := []string{
+		"/api/ca/root.pem",
+		"/api/certificates",
+		"/api/certificates/nas.local",
+		"/api/ca/install",
+		"/api/ca/install/macos",
+		"/api/ca/install/linux",
+		"/api/ca/install/windows",
+	}
+
+	for _, path := range unprotected {
+		w := doRequest(t, mux, "GET", path, "")
+		if w.Code == http.StatusUnauthorized {
+			t.Errorf("%s should be unprotected, got 401", path)
+		}
+	}
+}
+
+func TestAuth_KeyDownloadProtected(t *testing.T) {
+	h, engine, _ := newInitializedAuthHandler(t)
+	mux := serveMux(h)
+
+	if _, err := engine.IssueCert([]string{"nas.local"}); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+
+	// Enable auth.
+	doRequest(t, mux, "POST", "/api/auth",
+		`{"enabled": true, "username": "admin", "password": "s3cret"}`)
+
+	// Key download without creds should 401.
+	w := doRequest(t, mux, "GET", "/api/certificates/nas.local?type=key", "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("unauthed key download: got %d, want 401", w.Code)
+	}
+
+	// Key download with creds should work.
+	w = doAuthRequest(t, mux, "GET", "/api/certificates/nas.local?type=key", "", "admin", "s3cret")
+	if w.Code != http.StatusOK {
+		t.Errorf("authed key download: got %d, want 200", w.Code)
+	}
+}
+
+func TestAuth_DisableRemovesProtection(t *testing.T) {
+	h, _, _ := newInitializedAuthHandler(t)
+	mux := serveMux(h)
+
+	// Enable then disable auth.
+	doRequest(t, mux, "POST", "/api/auth",
+		`{"enabled": true, "username": "admin", "password": "secret123"}`)
+
+	// Must use creds to disable (auth is now active).
+	w := doAuthRequest(t, mux, "POST", "/api/auth",
+		`{"enabled": false}`, "admin", "secret123")
+	if w.Code != http.StatusOK {
+		t.Fatalf("disable auth: status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	// Status should now be accessible without creds.
+	w = doRequest(t, mux, "GET", "/api/status", "")
+	if w.Code != http.StatusOK {
+		t.Errorf("status after disable: got %d, want 200", w.Code)
+	}
+}
+
+func TestAuth_RequiresInit(t *testing.T) {
+	h, _, _ := newAuthHandler(t)
+	mux := serveMux(h)
+
+	// Auth before init should be rejected.
+	w := doRequest(t, mux, "POST", "/api/auth",
+		`{"enabled": true, "username": "admin", "password": "secret"}`)
+	if w.Code != http.StatusConflict {
+		t.Errorf("auth before init: got %d, want 409", w.Code)
+	}
+}
+
+func TestAuth_MissingFields(t *testing.T) {
+	h, _, _ := newInitializedAuthHandler(t)
+	mux := serveMux(h)
+
+	// Missing enabled field.
+	w := doRequest(t, mux, "POST", "/api/auth", `{"username": "admin"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("missing enabled: got %d, want 400", w.Code)
+	}
+
+	// Enable without username.
+	w = doRequest(t, mux, "POST", "/api/auth", `{"enabled": true, "password": "x"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("missing username: got %d, want 400", w.Code)
+	}
+
+	// Enable without password.
+	w = doRequest(t, mux, "POST", "/api/auth", `{"enabled": true, "username": "admin"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("missing password: got %d, want 400", w.Code)
+	}
+}
+
+func TestAuth_NilStoreIgnored(t *testing.T) {
+	// With nil auth store, auth endpoints should gracefully refuse.
+	h, _ := newInitializedHandler(t) // uses nil auth store
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "POST", "/api/auth",
+		`{"enabled": true, "username": "admin", "password": "secret"}`)
+	if w.Code != http.StatusConflict {
+		t.Errorf("nil store: got %d, want 409", w.Code)
+	}
+
+	// Protected endpoints should still work without auth.
+	w = doRequest(t, mux, "GET", "/api/status", "")
+	if w.Code != http.StatusOK {
+		t.Errorf("status with nil store: got %d, want 200", w.Code)
 	}
 }

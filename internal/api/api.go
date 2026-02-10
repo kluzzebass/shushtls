@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strings"
 
+	"shushtls/internal/auth"
 	"shushtls/internal/certengine"
 )
 
@@ -22,31 +23,49 @@ type Handler struct {
 	engine       *certengine.Engine
 	serviceHosts []string
 	logger       *slog.Logger
-	onReady      func() // called when initialization reaches Ready state
+	onReady      func()      // called when initialization reaches Ready state
+	authStore    *auth.Store // optional; nil disables auth entirely
 }
 
 // NewHandler creates an API handler backed by the given engine.
 // The onReady callback is invoked when initialization completes and the
 // engine reaches Ready state. It may be nil.
-func NewHandler(engine *certengine.Engine, serviceHosts []string, logger *slog.Logger, onReady func()) *Handler {
+// The authStore enables optional Basic Auth; pass nil to disable.
+func NewHandler(engine *certengine.Engine, serviceHosts []string, logger *slog.Logger, onReady func(), authStore *auth.Store) *Handler {
 	return &Handler{
 		engine:       engine,
 		serviceHosts: serviceHosts,
 		logger:       logger,
 		onReady:      onReady,
+		authStore:    authStore,
 	}
 }
 
 // Register adds all API routes to the given mux.
+//
+// Protected endpoints (when auth is enabled):
+//   - POST /api/initialize
+//   - POST /api/certificates
+//   - POST /api/auth
+//   - GET  /api/status
+//   - GET  /api/certificates/{san}?type=key (private key downloads)
+//
+// Unprotected endpoints (always open):
+//   - GET  /api/ca/root.pem
+//   - GET  /api/certificates (listing)
+//   - GET  /api/certificates/{san} (cert downloads, not keys)
+//   - GET  /api/ca/install/*
 func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/status", h.handleStatus)
-	mux.HandleFunc("POST /api/initialize", h.handleInitialize)
+	// Protected routes.
+	mux.HandleFunc("GET /api/status", h.requireAuth(h.handleStatus))
+	mux.HandleFunc("POST /api/initialize", h.requireAuth(h.handleInitialize))
+	mux.HandleFunc("POST /api/certificates", h.requireAuth(h.handleIssueCert))
+	mux.HandleFunc("POST /api/auth", h.requireAuth(h.handleAuth))
+
+	// Unprotected routes — cert reads and install scripts.
 	mux.HandleFunc("GET /api/ca/root.pem", h.handleCACert)
 	mux.HandleFunc("GET /api/certificates", h.handleListCerts)
-	mux.HandleFunc("POST /api/certificates", h.handleIssueCert)
-	mux.HandleFunc("GET /api/certificates/", h.handleGetCert)
-
-	// Root CA install helper scripts (always unprotected).
+	mux.HandleFunc("GET /api/certificates/", h.handleGetCert) // auth checked inside for ?type=key
 	mux.HandleFunc("GET /api/ca/install", h.handleInstallIndex)
 	mux.HandleFunc("GET /api/ca/install/macos", h.handleInstallMacOS)
 	mux.HandleFunc("GET /api/ca/install/linux", h.handleInstallLinux)
@@ -58,6 +77,29 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/initialize", methodNotAllowed("POST"))
 	mux.HandleFunc("/api/status", methodNotAllowed("GET"))
 	mux.HandleFunc("/api/ca/root.pem", methodNotAllowed("GET"))
+	mux.HandleFunc("/api/auth", methodNotAllowed("POST"))
+}
+
+// requireAuth wraps a handler with Basic Auth checking. If the auth store
+// is nil or auth is disabled, the handler is called directly.
+func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if h.authStore == nil || !h.authStore.IsEnabled() {
+			next(w, r)
+			return
+		}
+
+		username, password, ok := r.BasicAuth()
+		if !ok || !h.authStore.Verify(username, password) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="ShushTLS"`)
+			writeJSON(w, http.StatusUnauthorized, ErrorResponse{
+				Error: "authentication required",
+			})
+			return
+		}
+
+		next(w, r)
+	}
 }
 
 // methodNotAllowed returns a handler that responds with 405 and an Allow header.
@@ -112,6 +154,19 @@ type IssueCertRequest struct {
 type IssueCertResponse struct {
 	Cert    LeafCertInfo `json:"certificate"`
 	Message string       `json:"message"`
+}
+
+// AuthRequest is the JSON body for POST /api/auth.
+type AuthRequest struct {
+	Enabled  *bool  `json:"enabled"`  // pointer to distinguish false from omitted
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+}
+
+// AuthResponse is the JSON body for POST /api/auth.
+type AuthResponse struct {
+	Enabled bool   `json:"enabled"`
+	Message string `json:"message"`
 }
 
 // ErrorResponse is the JSON body for error responses.
@@ -309,6 +364,17 @@ func (h *Handler) handleGetCert(w http.ResponseWriter, r *http.Request) {
 		w.Write(pemBlock)
 
 	case "key":
+		// Private key downloads are protected by auth.
+		if h.authStore != nil && h.authStore.IsEnabled() {
+			username, password, ok := r.BasicAuth()
+			if !ok || !h.authStore.Verify(username, password) {
+				w.Header().Set("WWW-Authenticate", `Basic realm="ShushTLS"`)
+				writeJSON(w, http.StatusUnauthorized, ErrorResponse{
+					Error: "authentication required for private key download",
+				})
+				return
+			}
+		}
 		der, err := x509.MarshalECPrivateKey(leaf.Key)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, ErrorResponse{
@@ -328,6 +394,74 @@ func (h *Handler) handleGetCert(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{
 			Error: fmt.Sprintf("unknown type %q — use \"cert\" or \"key\"", which),
+		})
+	}
+}
+
+// POST /api/auth — enable or disable authentication.
+func (h *Handler) handleAuth(w http.ResponseWriter, r *http.Request) {
+	if h.authStore == nil {
+		writeJSON(w, http.StatusConflict, ErrorResponse{
+			Error: "authentication is not available (no auth store configured)",
+		})
+		return
+	}
+
+	if h.engine.State() == certengine.Uninitialized {
+		writeJSON(w, http.StatusConflict, ErrorResponse{
+			Error: "ShushTLS must be initialized before configuring auth",
+		})
+		return
+	}
+
+	var req AuthRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{
+			Error: fmt.Sprintf("invalid request body: %v", err),
+		})
+		return
+	}
+
+	if req.Enabled == nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{
+			Error: `"enabled" field is required`,
+		})
+		return
+	}
+
+	if *req.Enabled {
+		// Enabling auth — username and password are required.
+		if req.Username == "" || req.Password == "" {
+			writeJSON(w, http.StatusBadRequest, ErrorResponse{
+				Error: "username and password are required when enabling auth",
+			})
+			return
+		}
+		if err := h.authStore.Enable(req.Username, req.Password); err != nil {
+			h.logger.Error("failed to enable auth", "error", err)
+			writeJSON(w, http.StatusInternalServerError, ErrorResponse{
+				Error: fmt.Sprintf("failed to enable auth: %v", err),
+			})
+			return
+		}
+		h.logger.Info("authentication enabled", "username", req.Username)
+		writeJSON(w, http.StatusOK, AuthResponse{
+			Enabled: true,
+			Message: "Authentication enabled.",
+		})
+	} else {
+		// Disabling auth.
+		if err := h.authStore.Disable(); err != nil {
+			h.logger.Error("failed to disable auth", "error", err)
+			writeJSON(w, http.StatusInternalServerError, ErrorResponse{
+				Error: fmt.Sprintf("failed to disable auth: %v", err),
+			})
+			return
+		}
+		h.logger.Info("authentication disabled")
+		writeJSON(w, http.StatusOK, AuthResponse{
+			Enabled: false,
+			Message: "Authentication disabled.",
 		})
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"shushtls/internal/api"
+	"shushtls/internal/auth"
 	"shushtls/internal/certengine"
 	"shushtls/internal/ui"
 )
@@ -25,6 +26,7 @@ import (
 type Server struct {
 	config    Config
 	engine    *certengine.Engine
+	authStore *auth.Store
 	logger    *slog.Logger
 	readyCh   chan struct{} // closed when engine transitions to Ready
 	readyOnce sync.Once
@@ -47,11 +49,17 @@ func New(cfg Config) (*Server, error) {
 		engine.SetServiceHost(cfg.ServiceHosts[0])
 	}
 
+	authStore, err := auth.NewStore(cfg.StateDir)
+	if err != nil {
+		return nil, fmt.Errorf("initialize auth store: %w", err)
+	}
+
 	return &Server{
-		config:  cfg,
-		engine:  engine,
-		logger:  logger,
-		readyCh: make(chan struct{}),
+		config:    cfg,
+		engine:    engine,
+		authStore: authStore,
+		logger:    logger,
+		readyCh:   make(chan struct{}),
 	}, nil
 }
 
@@ -204,7 +212,7 @@ func (s *Server) buildMux() (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 
 	// Register API endpoints.
-	apiHandler := api.NewHandler(s.engine, s.config.ServiceHosts, s.logger, s.notifyReady)
+	apiHandler := api.NewHandler(s.engine, s.config.ServiceHosts, s.logger, s.notifyReady, s.authStore)
 	apiHandler.Register(mux)
 
 	// Catch-all for unmatched /api/ paths — return proper JSON errors
