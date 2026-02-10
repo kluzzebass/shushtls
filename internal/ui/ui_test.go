@@ -189,6 +189,7 @@ func TestNavigation_ActivePageHighlighted(t *testing.T) {
 		{"/setup", "Setup"},
 		{"/trust", "Trust"},
 		{"/certificates", "Certificates"},
+		{"/docs", "Docs"},
 	}
 
 	for _, tt := range tests {

@@ -50,6 +50,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /setup", h.handleSetup)
 	mux.HandleFunc("GET /trust", h.handleTrust)
 	mux.HandleFunc("GET /certificates", h.handleCertificates)
+	mux.HandleFunc("GET /docs", h.handleDocs)
 	mux.HandleFunc("GET /settings", h.requireAuth(h.handleSettings))
 
 	// Serve embedded static assets (JS, etc.).
@@ -63,7 +64,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 // template sets. Each page overrides the "title" and "content" blocks
 // defined in the layout.
 func (h *Handler) loadTemplates() error {
-	pages := []string{"home", "setup", "trust", "certificates", "settings"}
+	pages := []string{"home", "setup", "trust", "certificates", "docs", "settings"}
 	h.templates = make(map[string]*template.Template, len(pages))
 
 	for _, page := range pages {
@@ -186,6 +187,11 @@ func (h *Handler) handleTrust(w http.ResponseWriter, r *http.Request) {
 // GET /certificates
 func (h *Handler) handleCertificates(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "certificates", h.buildPageData(r, "certificates"))
+}
+
+// GET /docs
+func (h *Handler) handleDocs(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "docs", h.buildPageData(r, "docs"))
 }
 
 // GET /settings

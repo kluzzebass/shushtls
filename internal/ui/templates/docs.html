@@ -1,0 +1,80 @@
+{{define "title"}}ShushTLS — Documentation{{end}}
+{{define "content"}}
+<h1>Documentation</h1>
+
+<section id="philosophy">
+<h2>Philosophy</h2>
+<ul>
+  <li><strong>You own the CA.</strong> The root certificate is generated on your machine and never leaves your control. Trust is established by installing that root on each device (laptop, phone, TV) that should trust your certs.</li>
+  <li><strong>LAN trust model.</strong> ShushTLS assumes a trusted local network. The web UI and API are not locked down by default; optional HTTP Basic Auth is available in Settings if you want it. It does not try to be a hardened internet-facing service.</li>
+  <li><strong>No restart after setup.</strong> Start the server, open the UI, initialize, install the root CA on your devices—HTTPS turns on automatically. No process restart.</li>
+</ul>
+</section>
+
+<section id="cert-model">
+<h2>Certificate model (root vs leaf)</h2>
+<ul>
+  <li><strong>Root CA (one per ShushTLS instance).</strong> A long-lived certificate that acts as the trust anchor. You install this in your OS or browser trust store (see <a href="/trust">Trust</a>). Once a device trusts it, that device will accept any certificate signed by this root. ShushTLS generates it at initialization and keeps it in the state directory.</li>
+  <li><strong>Leaf certificates (many).</strong> Short-lived certificates signed by your root, each bound to specific DNS names (e.g. <code>nas.home.arpa</code> or <code>*.home.arpa</code>). You issue these via the UI or API and use them on your services (web server, NAS, etc.). Browsers accept them because they chain to the root CA you installed.</li>
+  <li><strong>Why install trust?</strong> Browsers and OSes only trust a fixed set of public CAs. Your ShushTLS root is private, so every device that should accept your certs must be told to trust that root. The install scripts on the <a href="/trust">Trust</a> page do exactly that.</li>
+</ul>
+<p>So: one root (you install it once per device), many leaves (you issue as needed).</p>
+</section>
+
+<section id="bootstrap">
+<h2>Bootstrap flow</h2>
+<ol>
+  <li><strong>First start.</strong> Server starts in HTTP-only mode. Logs show the URL (e.g. <code>http://localhost:8080</code>).</li>
+  <li><strong>Initialize.</strong> Open that URL, complete <a href="/setup">Setup</a>. ShushTLS generates the root CA and its own service certificate (for this UI over HTTPS).</li>
+  <li><strong>Install trust.</strong> On each device (Mac, Linux, Windows, etc.), run the install script or download the root PEM from <a href="/trust">Trust</a> and add it to the system trust store.</li>
+  <li><strong>HTTPS active.</strong> As soon as initialization completes, the server enables HTTPS and redirects HTTP to it. No restart. Use the HTTPS URL from the logs and continue issuing certs from <a href="/certificates">Certificates</a>.</li>
+</ol>
+<p>If you start with an existing state directory (already initialized), the server goes straight to HTTPS and redirect.</p>
+</section>
+
+<section id="non-goals">
+<h2>Non-goals and tradeoffs</h2>
+<p>ShushTLS intentionally does <strong>not</strong> do the following. These are conscious limits, not missing features.</p>
+<ul>
+  <li><strong>No public trust.</strong> The root CA is for your network only. You explicitly install it on each device. That keeps the model simple and keeps you in control.</li>
+  <li><strong>No short-lived certs / automatic rotation.</strong> Certificates are issued with validity that meets current browser rules (e.g. 200 days). There is no built-in ACME, no auto-renewal. You re-issue when needed.</li>
+  <li><strong>No revocation.</strong> There is no CRL or OCSP. If you need to revoke a cert, stop using it and re-issue a new one for that name if necessary.</li>
+  <li><strong>No auth by default.</strong> The UI and API are open on the LAN. Optional HTTP Basic Auth can be enabled in <a href="/settings">Settings</a>.</li>
+  <li><strong>No HA / clustering.</strong> One instance, one state directory. A lock file prevents running two instances against the same state.</li>
+  <li><strong>No compliance or audit features.</strong> No certificate transparency, no detailed audit log. It's a small tool for people who want a private CA without ceremony.</li>
+</ul>
+</section>
+
+<section id="auth-state">
+<h2>Optional auth and state directory</h2>
+<p>After initialization, you can enable HTTP Basic Auth in <a href="/settings">Settings</a>. When enabled, it protects initialization, certificate issuance, and status; listing certs and downloading the root PEM remain unauthenticated so install scripts and devices can still get the root. Private key downloads require auth when auth is on.</p>
+<p>Default state directory is the platform config dir (e.g. <code>~/.config/shushtls</code> on Linux, <code>~/Library/Application Support/shushtls</code> on macOS). Override with <code>-state-dir</code>. All persistent data lives there. Only one ShushTLS process may use a given state directory at a time.</p>
+</section>
+
+<section id="maintenance">
+<h2>Maintenance (Future Me)</h2>
+<p>For whoever returns to this system after a long time.</p>
+
+<h3>Where state lives</h3>
+<p>Under the state directory: <code>ca/</code> (root CA key and cert), <code>certs/</code> (one subdir per issued cert), <code>service-host</code> (which cert is used for ShushTLS's HTTPS), <code>auth.json</code> (if auth was enabled), <code>shushtls.lock</code> (only while the server is running).</p>
+
+<h3>Regenerating or re-issuing certificates</h3>
+<p><strong>Leaf certs:</strong> Use <a href="/certificates">Certificates</a> to issue. Same name returns the existing cert (idempotent). <strong>Service cert:</strong> Issue a new cert from Certificates, then choose &ldquo;Use as service&rdquo;—no restart. <strong>Root CA:</strong> Generated once at initialization; no in-app regenerate. Replacing it would mean re-trusting on every device.</p>
+
+<h3>Adding a new device</h3>
+<p>Install the root CA on the new device using the scripts on <a href="/trust">Trust</a> (or manually add the root PEM to that device's trust store). No need to touch ShushTLS state.</p>
+
+<h3>If a certificate expires</h3>
+<p><strong>Leaf certs:</strong> Validity is 200 days. Before expiry, issue a new cert from Certificates and deploy it to your service. <strong>Root CA:</strong> Default 25 years. If it ever approaches expiry, you'd generate a new root and re-install trust on all devices.</p>
+
+<h3>Rebuilding the binary</h3>
+<p><code>just build</code> (or <code>go build -o shushtls .</code>). Tests: <code>just test</code>. Run: <code>just run</code> or <code>./shushtls</code> with optional flags.</p>
+
+<h3>Troubleshooting</h3>
+<ul>
+  <li><strong>&ldquo;Another ShushTLS instance is already using …&rdquo;</strong> Another process has that state dir, or a previous run didn't release the lock. Ensure no other <code>shushtls</code> is running; if sure, remove <code>shushtls.lock</code> in the state dir.</li>
+  <li><strong>Permission errors on state dir:</strong> The path must be writable and be a directory.</li>
+  <li><strong>Browsers don't trust my certs:</strong> The device must trust the root CA. Re-run the install script for that OS or manually add the root cert to the trust store.</li>
+</ul>
+</section>
+{{end}}
