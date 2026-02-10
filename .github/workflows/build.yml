@@ -86,7 +86,7 @@ jobs:
           cd homebrew-tap
           cat > shushtls.rb << 'FORMULA'
           class Shushtls < Formula
-            desc "HTTPS for your home network"
+            desc "Local PKI: issue TLS certs for your services, install root CA on devices (home/lab)"
             homepage "https://github.com/kluzzebass/shushtls"
             version "VERSION_NUM"
             license "MIT"
