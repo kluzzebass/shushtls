@@ -224,7 +224,7 @@ func (s *Server) buildMux() (*http.ServeMux, error) {
 	})
 
 	// Register web UI routes.
-	uiHandler, err := ui.NewHandler(s.engine, s.logger)
+	uiHandler, err := ui.NewHandler(s.engine, s.authStore, s.logger)
 	if err != nil {
 		return nil, fmt.Errorf("initialize UI: %w", err)
 	}

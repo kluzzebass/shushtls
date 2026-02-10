@@ -121,6 +121,90 @@
     });
   }
 
+  // --- Auth enable form (/settings) ---
+
+  const authEnableForm = document.getElementById("auth-enable-form");
+  const authUpdateForm = document.getElementById("auth-update-form");
+  const authDisableBtn = document.getElementById("auth-disable-btn");
+  const authResult = document.getElementById("auth-result");
+
+  function handleAuthEnable(e) {
+    e.preventDefault();
+
+    var btn = e.target.querySelector("button[type=submit]");
+    btn.setAttribute("aria-busy", "true");
+    btn.disabled = true;
+    authResult.hidden = true;
+
+    var username = document.getElementById("auth-username").value.trim();
+    var password = document.getElementById("auth-password").value;
+
+    fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true, username: username, password: password }),
+    })
+      .then(function (resp) { return resp.json().then(function (data) { return { ok: resp.ok, data: data }; }); })
+      .then(function (result) {
+        if (result.ok) {
+          authResult.innerHTML = "<p><strong>Success!</strong> " + escapeHtml(result.data.message) + "</p>" +
+            "<p>Reloading&hellip;</p>";
+          authResult.setAttribute("class", "");
+          authResult.hidden = false;
+          setTimeout(function () { window.location.reload(); }, 1000);
+        } else {
+          showError(authResult, result.data.error || "Failed to enable auth.");
+          btn.setAttribute("aria-busy", "false");
+          btn.disabled = false;
+        }
+      })
+      .catch(function (err) {
+        showError(authResult, "Network error: " + err.message);
+        btn.setAttribute("aria-busy", "false");
+        btn.disabled = false;
+      });
+  }
+
+  if (authEnableForm) {
+    authEnableForm.addEventListener("submit", handleAuthEnable);
+  }
+  if (authUpdateForm) {
+    authUpdateForm.addEventListener("submit", handleAuthEnable);
+  }
+
+  if (authDisableBtn) {
+    authDisableBtn.addEventListener("click", function () {
+      authDisableBtn.setAttribute("aria-busy", "true");
+      authDisableBtn.disabled = true;
+      authResult.hidden = true;
+
+      fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: false }),
+      })
+        .then(function (resp) { return resp.json().then(function (data) { return { ok: resp.ok, data: data }; }); })
+        .then(function (result) {
+          if (result.ok) {
+            authResult.innerHTML = "<p><strong>Success!</strong> " + escapeHtml(result.data.message) + "</p>" +
+              "<p>Reloading&hellip;</p>";
+            authResult.setAttribute("class", "");
+            authResult.hidden = false;
+            setTimeout(function () { window.location.reload(); }, 1000);
+          } else {
+            showError(authResult, result.data.error || "Failed to disable auth.");
+            authDisableBtn.setAttribute("aria-busy", "false");
+            authDisableBtn.disabled = false;
+          }
+        })
+        .catch(function (err) {
+          showError(authResult, "Network error: " + err.message);
+          authDisableBtn.setAttribute("aria-busy", "false");
+          authDisableBtn.disabled = false;
+        });
+    });
+  }
+
   // --- Helpers ---
 
   function showError(el, msg) {

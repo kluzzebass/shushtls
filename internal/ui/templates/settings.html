@@ -1,0 +1,86 @@
+{{define "title"}}ShushTLS — Settings{{end}}
+{{define "content"}}
+<h1>Settings</h1>
+
+{{if eq .State "uninitialized"}}
+<article>
+  <p>ShushTLS must be initialized before settings can be configured. <a href="/setup">Run setup first.</a></p>
+</article>
+{{else}}
+
+<h2>Authentication</h2>
+
+{{if .AuthEnabled}}
+<article>
+  <p>
+    <span class="state-badge" data-state="ready">Enabled</span>
+    HTTP Basic Auth is active. Protected endpoints require credentials.
+  </p>
+
+  <h3>Update Credentials</h3>
+  <form id="auth-update-form">
+    <label for="auth-username">
+      Username
+      <input type="text" id="auth-username" name="username" required autocomplete="username">
+    </label>
+    <label for="auth-password">
+      Password
+      <input type="password" id="auth-password" name="password" required autocomplete="new-password">
+    </label>
+    <button type="submit" id="auth-update-btn">Update Credentials</button>
+  </form>
+
+  <hr>
+
+  <h3>Disable Authentication</h3>
+  <p>Remove protection from API endpoints. You can re-enable it at any time.</p>
+  <button type="button" id="auth-disable-btn" class="outline secondary">Disable Authentication</button>
+
+  <div id="auth-result" hidden></div>
+</article>
+
+{{else}}
+<article>
+  <p>
+    <span class="state-badge" data-state="uninitialized">Disabled</span>
+    Authentication is not enabled. All API endpoints are open.
+  </p>
+
+  <h3>Enable Authentication</h3>
+  <p>
+    Protect sensitive API endpoints with HTTP Basic Auth. Certificate
+    listings and downloads remain open so install scripts work without credentials.
+  </p>
+  <form id="auth-enable-form">
+    <label for="auth-username">
+      Username
+      <input type="text" id="auth-username" name="username" required autocomplete="username">
+    </label>
+    <label for="auth-password">
+      Password
+      <input type="password" id="auth-password" name="password" required autocomplete="new-password">
+    </label>
+    <button type="submit" id="auth-enable-btn">Enable Authentication</button>
+  </form>
+
+  <div id="auth-result" hidden></div>
+</article>
+{{end}}
+
+<noscript>
+  <article>
+    <p><strong>Without JavaScript:</strong></p>
+    <pre><code># Enable auth:
+curl -X POST {{.BaseURL}}/api/auth \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true, "username": "admin", "password": "your-password"}'
+
+# Disable auth (requires current credentials):
+curl -X POST -u admin:your-password {{.BaseURL}}/api/auth \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}'</code></pre>
+  </article>
+</noscript>
+
+{{end}}
+{{end}}

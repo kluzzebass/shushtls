@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"strings"
 
+	"shushtls/internal/auth"
 	"shushtls/internal/certengine"
 )
 
@@ -24,15 +25,18 @@ var templateFS embed.FS
 // Handler serves the ShushTLS web UI pages.
 type Handler struct {
 	engine    *certengine.Engine
+	authStore *auth.Store // optional; nil if auth is not available
 	logger    *slog.Logger
 	templates map[string]*template.Template
 }
 
 // NewHandler creates a UI handler backed by the given engine.
-func NewHandler(engine *certengine.Engine, logger *slog.Logger) (*Handler, error) {
+// The authStore may be nil to disable auth UI.
+func NewHandler(engine *certengine.Engine, authStore *auth.Store, logger *slog.Logger) (*Handler, error) {
 	h := &Handler{
-		engine: engine,
-		logger: logger,
+		engine:    engine,
+		authStore: authStore,
+		logger:    logger,
 	}
 	if err := h.loadTemplates(); err != nil {
 		return nil, fmt.Errorf("load templates: %w", err)
@@ -46,6 +50,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /setup", h.handleSetup)
 	mux.HandleFunc("GET /trust", h.handleTrust)
 	mux.HandleFunc("GET /certificates", h.handleCertificates)
+	mux.HandleFunc("GET /settings", h.handleSettings)
 
 	// Serve embedded static assets (JS, etc.).
 	staticFS, _ := fs.Sub(templateFS, "templates/static")
@@ -58,7 +63,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 // template sets. Each page overrides the "title" and "content" blocks
 // defined in the layout.
 func (h *Handler) loadTemplates() error {
-	pages := []string{"home", "setup", "trust", "certificates"}
+	pages := []string{"home", "setup", "trust", "certificates", "settings"}
 	h.templates = make(map[string]*template.Template, len(pages))
 
 	for _, page := range pages {
@@ -92,13 +97,14 @@ func (h *Handler) render(w http.ResponseWriter, page string, data any) {
 
 // pageData is the common data passed to every template.
 type pageData struct {
-	ActiveNav string
-	State     string
-	Host      string
-	Scheme    string
-	BaseURL   string // scheme://host for self-referencing URLs
-	RootCA    *caInfo
-	Certs     []certInfo
+	ActiveNav   string
+	State       string
+	Host        string
+	Scheme      string
+	BaseURL     string // scheme://host for self-referencing URLs
+	AuthEnabled bool
+	RootCA      *caInfo
+	Certs       []certInfo
 }
 
 type caInfo struct {
@@ -122,11 +128,12 @@ func (h *Handler) buildPageData(r *http.Request, activeNav string) pageData {
 
 	scheme := requestScheme(r)
 	pd := pageData{
-		ActiveNav: activeNav,
-		State:     state.String(),
-		Host:      r.Host,
-		Scheme:    scheme,
-		BaseURL:   scheme + "://" + r.Host,
+		ActiveNav:   activeNav,
+		State:       state.String(),
+		Host:        r.Host,
+		Scheme:      scheme,
+		BaseURL:     scheme + "://" + r.Host,
+		AuthEnabled: h.authStore != nil && h.authStore.IsEnabled(),
 	}
 
 	if ca := h.engine.CA(); ca != nil {
@@ -160,6 +167,11 @@ func (h *Handler) handleTrust(w http.ResponseWriter, r *http.Request) {
 // GET /certificates
 func (h *Handler) handleCertificates(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "certificates", h.buildPageData(r, "certificates"))
+}
+
+// GET /settings
+func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "settings", h.buildPageData(r, "settings"))
 }
 
 // --- Helpers ---
