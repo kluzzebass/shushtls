@@ -31,10 +31,10 @@ const (
 	RootCAValidity = time.Duration(DefaultCAValidityYears) * 365 * 24 * time.Hour // ~25 years
 
 	// LeafCertValidity is how long leaf certificates are valid.
-	// 825 days — the maximum allowed by Apple platforms (macOS / iOS)
-	// for TLS server certificates, including those from private CAs.
-	// See: https://support.apple.com/en-us/HT210176
-	LeafCertValidity = 825 * 24 * time.Hour // 825 days
+	// 200 days — the maximum accepted by browsers as of March 15, 2026.
+	// Apple previously enforced 825 days, but the CA/Browser Forum
+	// ballot SC-081 reduces this to 200 days.
+	LeafCertValidity = 200 * 24 * time.Hour // 200 days
 
 	// ServiceCertValidity is how long the ShushTLS service's own leaf
 	// certificate is valid. Same as other leaf certs.
