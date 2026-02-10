@@ -1,4 +1,6 @@
-# ShushTLS
+# 🤫 ShushTLS
+
+[![AI SLOP 02](https://raw.githubusercontent.com/kluzzebass/ai-slop/main/ai-slop-02-glitz.svg)](https://github.com/kluzzebass/ai-slop)
 
 A small, local-first PKI for your home or lab: run it on one machine, issue TLS certificates for your services, and install its root CA on your devices so browsers stop complaining. No public CAs, no cloud, no account.
 
