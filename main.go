@@ -9,16 +9,23 @@ import (
 	"strings"
 
 	"shushtls/internal/server"
+	"shushtls/internal/version"
 )
 
 func main() {
 	var (
+		showVersion  = flag.Bool("version", false, "print version and exit")
 		stateDir     = flag.String("state-dir", server.DefaultStateDir(), "directory for persistent state")
 		httpAddr     = flag.String("http-addr", ":8080", "HTTP listen address (setup mode)")
 		httpsAddr    = flag.String("https-addr", ":8443", "HTTPS listen address (normal mode)")
 		serviceHosts = flag.String("service-hosts", "shushtls.local,localhost", "comma-separated DNS names for ShushTLS's own cert")
 	)
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version.Version)
+		os.Exit(0)
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
