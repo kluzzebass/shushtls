@@ -34,7 +34,7 @@ func (l *LeafCert) PrimarySAN() string {
 // primary SAN and the certificate's CommonName. Validity uses LeafCertValidity.
 // Subject O/OU/C/L/ST use default leaf subject (Organization only).
 //
-// If any name contains a wildcard (e.g. "*.home.arpa"), the bare domain
+// If any name contains a wildcard (e.g. "*.example.com"), the bare domain
 // is automatically added as an additional SAN if not already present.
 //
 // This is the single entry point for all leaf certificate issuance —

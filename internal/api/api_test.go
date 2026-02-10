@@ -100,7 +100,7 @@ func TestStatus_Ready(t *testing.T) {
 	mux := serveMux(h)
 
 	// Also issue a wildcard.
-	if _, err := engine.IssueCert([]string{"*.home.arpa"}, nil); err != nil {
+	if _, err := engine.IssueCert([]string{"*.example.com"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
@@ -304,7 +304,7 @@ func TestIssueCert_BeforeInit(t *testing.T) {
 	mux := serveMux(h)
 
 	w := doRequest(t, mux, "POST", "/api/certificates",
-		`{"dns_names": ["nas.home.arpa"]}`)
+		`{"dns_names": ["nas.example.com"]}`)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("status = %d, want 409", w.Code)
 	}
@@ -336,14 +336,14 @@ func TestIssueCert_FQDN(t *testing.T) {
 	mux := serveMux(h)
 
 	w := doRequest(t, mux, "POST", "/api/certificates",
-		`{"dns_names": ["nas.home.arpa"]}`)
+		`{"dns_names": ["nas.example.com"]}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200\nbody: %s", w.Code, w.Body.String())
 	}
 
 	resp := decodeJSON[IssueCertResponse](t, w)
-	if resp.Cert.PrimarySAN != "nas.home.arpa" {
-		t.Errorf("primary_san = %q, want %q", resp.Cert.PrimarySAN, "nas.home.arpa")
+	if resp.Cert.PrimarySAN != "nas.example.com" {
+		t.Errorf("primary_san = %q, want %q", resp.Cert.PrimarySAN, "nas.example.com")
 	}
 }
 
@@ -352,19 +352,19 @@ func TestIssueCert_Wildcard(t *testing.T) {
 	mux := serveMux(h)
 
 	w := doRequest(t, mux, "POST", "/api/certificates",
-		`{"dns_names": ["*.home.arpa"]}`)
+		`{"dns_names": ["*.example.com"]}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200\nbody: %s", w.Code, w.Body.String())
 	}
 
 	resp := decodeJSON[IssueCertResponse](t, w)
-	if resp.Cert.PrimarySAN != "*.home.arpa" {
-		t.Errorf("primary_san = %q, want %q", resp.Cert.PrimarySAN, "*.home.arpa")
+	if resp.Cert.PrimarySAN != "*.example.com" {
+		t.Errorf("primary_san = %q, want %q", resp.Cert.PrimarySAN, "*.example.com")
 	}
 	// Should include bare domain in SANs.
 	found := false
 	for _, name := range resp.Cert.DNSNames {
-		if name == "home.arpa" {
+		if name == "example.com" {
 			found = true
 		}
 	}
@@ -377,7 +377,7 @@ func TestIssueCert_Idempotent(t *testing.T) {
 	h, _ := newInitializedHandler(t)
 	mux := serveMux(h)
 
-	body := `{"dns_names": ["nas.home.arpa"]}`
+	body := `{"dns_names": ["nas.example.com"]}`
 	w1 := doRequest(t, mux, "POST", "/api/certificates", body)
 	w2 := doRequest(t, mux, "POST", "/api/certificates", body)
 
@@ -415,7 +415,7 @@ func TestListCerts_AfterIssuance(t *testing.T) {
 	mux := serveMux(h)
 
 	// Issue an additional cert.
-	if _, err := engine.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
+	if _, err := engine.IssueCert([]string{"nas.example.com"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
@@ -441,7 +441,7 @@ func TestGetCert_NotFound(t *testing.T) {
 	h, _ := newInitializedHandler(t)
 	mux := serveMux(h)
 
-	w := doRequest(t, mux, "GET", "/api/certificates/nonexistent.home.arpa", "")
+	w := doRequest(t, mux, "GET", "/api/certificates/nonexistent.example.com", "")
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
 	}
@@ -451,11 +451,11 @@ func TestGetCert_DownloadCert(t *testing.T) {
 	h, engine := newInitializedHandler(t)
 	mux := serveMux(h)
 
-	if _, err := engine.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
+	if _, err := engine.IssueCert([]string{"nas.example.com"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
-	w := doRequest(t, mux, "GET", "/api/certificates/nas.home.arpa", "")
+	w := doRequest(t, mux, "GET", "/api/certificates/nas.example.com", "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
@@ -475,11 +475,11 @@ func TestGetCert_DownloadKey(t *testing.T) {
 	h, engine := newInitializedHandler(t)
 	mux := serveMux(h)
 
-	if _, err := engine.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
+	if _, err := engine.IssueCert([]string{"nas.example.com"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
-	w := doRequest(t, mux, "GET", "/api/certificates/nas.home.arpa?type=key", "")
+	w := doRequest(t, mux, "GET", "/api/certificates/nas.example.com?type=key", "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
@@ -494,11 +494,11 @@ func TestGetCert_DownloadZip(t *testing.T) {
 	h, engine := newInitializedHandler(t)
 	mux := serveMux(h)
 
-	if _, err := engine.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
+	if _, err := engine.IssueCert([]string{"nas.example.com"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
-	w := doRequest(t, mux, "GET", "/api/certificates/nas.home.arpa?type=zip", "")
+	w := doRequest(t, mux, "GET", "/api/certificates/nas.example.com?type=zip", "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
@@ -539,7 +539,7 @@ func TestGetCert_DownloadZip(t *testing.T) {
 			t.Fatalf("zip entry %q: PEM type = %q, want EC PRIVATE KEY", f.Name, block.Type)
 		}
 	}
-	base := certengine.SanitizeSAN("nas.home.arpa")
+	base := certengine.SanitizeSAN("nas.example.com")
 	if !names[base+".cert.pem"] || !names[base+".key.pem"] {
 		t.Errorf("zip entries = %v, want %q and %q", names, base+".cert.pem", base+".key.pem")
 	}
@@ -549,11 +549,11 @@ func TestGetCert_InvalidType(t *testing.T) {
 	h, engine := newInitializedHandler(t)
 	mux := serveMux(h)
 
-	if _, err := engine.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
+	if _, err := engine.IssueCert([]string{"nas.example.com"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
-	w := doRequest(t, mux, "GET", "/api/certificates/nas.home.arpa?type=bogus", "")
+	w := doRequest(t, mux, "GET", "/api/certificates/nas.example.com?type=bogus", "")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}

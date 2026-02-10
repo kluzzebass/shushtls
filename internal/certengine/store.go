@@ -25,9 +25,9 @@ import (
 // Each issued certificate gets its own subdirectory under certs/, named
 // after the primary SAN with * replaced by _wildcard_. Examples:
 //
-//   certs/_wildcard_.home.arpa/   — wildcard cert for *.home.arpa
-//   certs/nas.home.arpa/          — FQDN cert for nas.home.arpa
-//   certs/shushtls.home.arpa/     — service cert used by ShushTLS itself
+//   certs/_wildcard_.example.com/   — wildcard cert for *.example.com
+//   certs/nas.example.com/          — FQDN cert for nas.example.com
+//   certs/shushtls.local/           — service cert used by ShushTLS itself
 
 const (
 	caDirName   = "ca"

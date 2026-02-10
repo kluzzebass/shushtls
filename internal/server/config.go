@@ -28,7 +28,7 @@ type Config struct {
 	// ServiceHosts are the DNS names for ShushTLS's own TLS certificate.
 	// The first entry is the primary SAN. These are used during initialization
 	// to issue the service certificate.
-	// Example: ["shushtls.home.arpa", "localhost"]
+	// Example: ["shushtls.local", "localhost"]
 	ServiceHosts []string
 }
 

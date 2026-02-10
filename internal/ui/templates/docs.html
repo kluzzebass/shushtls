@@ -15,7 +15,7 @@
 <h2>Certificate model (root vs leaf)</h2>
 <ul>
   <li><strong>Root CA (one per ShushTLS instance).</strong> A long-lived certificate that acts as the trust anchor. You install this in your OS or browser trust store (see <a href="/trust">Install CA</a>). Once a device trusts it, that device will accept any certificate signed by this root. ShushTLS generates it at initialization and keeps it in the state directory. <strong>Validity:</strong> 25 years by default.</li>
-  <li><strong>Leaf certificates (many).</strong> Certificates signed by your root, each bound to specific DNS names (e.g. <code>nas.home.arpa</code> or <code>*.home.arpa</code>). You issue these via the UI or API and use them on your services. Browsers accept them because they chain to the root CA you installed. <strong>Validity:</strong> follows the CA/Browser Forum rules below.</li>
+  <li><strong>Leaf certificates (many).</strong> Certificates signed by your root, each bound to specific DNS names (e.g. <code>nas.example.com</code> or <code>*.example.com</code>). You issue these via the UI or API and use them on your services. Browsers accept them because they chain to the root CA you installed. <strong>Validity:</strong> follows the CA/Browser Forum rules below.</li>
   <li><strong>Why install the root on each device?</strong> Browsers and OSes only trust a fixed set of public CAs. Your ShushTLS root is private, so every device that should accept your certs must be told to trust that root. The install scripts on the <a href="/trust">Install CA</a> page do exactly that.</li>
 </ul>
 <p>So: one root (you install it once per device), many leaves (you issue as needed).</p>
@@ -87,11 +87,11 @@
   </tbody>
 </table>
 <p>Certificate subject defaults (O, OU, C, L, ST) can be set in <a href="/settings">Settings</a> or via <code>GET/PUT /api/leaf-subject</code>. CN is always the primary hostname.</p>
-<p><code>{primary_san}</code> is the first DNS name (e.g. <code>nas.home.arpa</code> or <code>*.home.arpa</code>). For wildcards use <code>%2A</code> in the URL. Use <code>not_after</code> from the list to plan re-issuance.</p>
+<p><code>{primary_san}</code> is the first DNS name (e.g. <code>nas.example.com</code> or <code>*.example.com</code>). For wildcards use <code>%2A</code> in the URL. Use <code>not_after</code> from the list to plan re-issuance.</p>
 
 <h3>Example: issue and download</h3>
 <pre><code># BASE = your ShushTLS URL (e.g. https://shushtls.local:8443)
-# SAN = primary name (e.g. nas.home.arpa)
+# SAN = primary name (e.g. nas.example.com)
 
 # Issue (idempotent); add -u user:pass if auth is on
 curl -sS -X POST "$BASE/api/certificates" \

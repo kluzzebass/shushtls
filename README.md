@@ -29,7 +29,7 @@ Open the URL shown in the log (e.g. `http://localhost:8080`). Click through setu
 ## Certificate model (root vs leaf)
 
 - **Root CA (one per ShushTLS instance).** A long-lived certificate that acts as the trust anchor. You install this in your OS or browser trust store. Once a device trusts it, that device will accept any certificate signed by this root. ShushTLS generates it at initialization and keeps it in the state directory. **Validity:** 25 years by default.
-- **Leaf certificates (many).** Certificates signed by your root, each bound to specific DNS names (e.g. `nas.home.arpa` or `*.home.arpa`). You issue these via the UI or API and use them on your services. Browsers accept them because they chain to the root CA you installed. **Validity:** follows the CA/Browser Forum rules below.
+- **Leaf certificates (many).** Certificates signed by your root, each bound to specific DNS names (e.g. `nas.example.com` or `*.example.com`). You issue these via the UI or API and use them on your services. Browsers accept them because they chain to the root CA you installed. **Validity:** follows the CA/Browser Forum rules below.
 - **Why install the root on each device?** Browsers and OSes only trust a fixed set of public CAs. Your ShushTLS root is private, so every device that should accept your certs must be told to trust that root. The install scripts in the web UI do exactly that.
 
 So: one root (you install it once per device), many leaves (you issue as needed).
@@ -77,12 +77,12 @@ As certificate validity periods get shorter (see [Certificate longevity](#certif
 |--------|------|------|-------------|
 | GET | `/api/certificates` | no | List all issued certificates (JSON). |
 | POST | `/api/certificates` | yes | Register a certificate (SAN config). Body: `{"dns_names": ["host.example.com", "*.example.com"]}`. Idempotent. The actual cert and key are generated on download (GET). |
-| GET | `/api/certificates/{primary_san}` | no | Download certificate PEM. Example: `GET /api/certificates/nas.home.arpa` |
+| GET | `/api/certificates/{primary_san}` | no | Download certificate PEM. Example: `GET /api/certificates/nas.example.com` |
 | GET | `/api/certificates/{primary_san}?type=key` | yes | Download private key PEM. Requires auth when auth is enabled. |
 | GET | `/api/certificates/{primary_san}?type=zip` | yes | Download cert+key bundle (zip). Matching pair guaranteed. Requires auth when auth is enabled. |
 | GET | `/api/ca/root.pem` | no | Download root CA certificate (PEM). |
 
-`{primary_san}` is the first DNS name in the certificate (e.g. `nas.home.arpa` or `*.home.arpa`). For wildcards, the path uses the literal `*` (URL-encode as `%2A` if needed).
+`{primary_san}` is the first DNS name in the certificate (e.g. `nas.example.com` or `*.example.com`). For wildcards, the path uses the literal `*` (URL-encode as `%2A` if needed).
 
 ### List response (GET /api/certificates)
 
@@ -91,8 +91,8 @@ Returns a JSON array of certificate objects:
 ```json
 [
   {
-    "primary_san": "nas.home.arpa",
-    "dns_names": ["nas.home.arpa"],
+    "primary_san": "nas.example.com",
+    "dns_names": ["nas.example.com"],
     "not_before": "2026-01-15T12:00:00Z",
     "not_after": "2026-08-03T12:00:00Z",
     "is_service": false
@@ -107,7 +107,7 @@ Use `not_after` to plan when to fetch a fresh cert. Leaf certs (except the servi
 Request body:
 
 ```json
-{"dns_names": ["nas.home.arpa", "*.home.arpa"]}
+{"dns_names": ["nas.example.com", "*.example.com"]}
 ```
 
 Success (200) response:
@@ -115,8 +115,8 @@ Success (200) response:
 ```json
 {
   "certificate": {
-    "primary_san": "nas.home.arpa",
-    "dns_names": ["nas.home.arpa", "*.home.arpa", "home.arpa"],
+    "primary_san": "nas.example.com",
+    "dns_names": ["nas.example.com", "*.example.com", "example.com"],
     "not_before": "2026-01-15T12:00:00Z",
     "not_after": "2026-08-03T12:00:00Z",
     "is_service": false
@@ -132,7 +132,7 @@ Errors: 400 (invalid body or empty `dns_names`), 409 (not initialized), 500 (iss
 ```bash
 # Replace BASE with your ShushTLS URL (e.g. https://shushtls.local:8443)
 BASE="https://shushtls.local:8443"
-SAN="nas.home.arpa"
+SAN="nas.example.com"
 
 # Issue (idempotent); add -u user:pass if auth is enabled
 curl -sS -X POST "$BASE/api/certificates" \
@@ -181,7 +181,7 @@ Override with `-state-dir`.
     ca-key.pem      # Root CA private key (keep secret)
     ca-cert.pem     # Root CA certificate (install this on devices)
   certs/
-    <sanitized-SAN>/   # One dir per registered SAN (e.g. nas.home.arpa, _wildcard_.home.arpa)
+    <sanitized-SAN>/   # One dir per registered SAN (e.g. nas.example.com, _wildcard_.example.com)
       dns_names        # SAN config only; cert/key generated on each download. Service cert also has key.pem and cert.pem
   service-host       # Primary SAN of the cert used for ShushTLS’s own HTTPS
   auth.json          # Optional; present if auth was ever enabled

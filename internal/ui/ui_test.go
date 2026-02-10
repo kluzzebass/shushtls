@@ -162,7 +162,7 @@ func TestCertificates_WithCerts(t *testing.T) {
 	mux := serveMux(h)
 
 	// Issue an extra cert.
-	if _, err := engine.IssueCert([]string{"*.home.arpa"}, nil); err != nil {
+	if _, err := engine.IssueCert([]string{"*.example.com"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
@@ -172,7 +172,7 @@ func TestCertificates_WithCerts(t *testing.T) {
 	}
 	body := w.Body.String()
 	assertContains(t, body, "shushtls.test")
-	assertContains(t, body, "*.home.arpa")
+	assertContains(t, body, "*.example.com")
 	assertContains(t, body, "Issue a new certificate")
 }
 
