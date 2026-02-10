@@ -31,9 +31,12 @@ const (
 	RootCAValidity = time.Duration(DefaultCAValidityYears) * 365 * 24 * time.Hour // ~25 years
 
 	// LeafCertValidity is how long leaf certificates are valid.
-	// 200 days — the maximum accepted by browsers as of March 15, 2026.
-	// Apple previously enforced 825 days, but the CA/Browser Forum
-	// ballot SC-081 reduces this to 200 days.
+	// CA/Browser Forum ballot SC-081 step-down schedule:
+	//   Until  2026-03-15: 398 days
+	//   From   2026-03-15: 200 days
+	//   From   2027-03-15: 100 days
+	//   From   2029-03-15:  47 days
+	// Using 200 days now to be safe through the next step-down.
 	LeafCertValidity = 200 * 24 * time.Hour // 200 days
 
 	// ServiceCertValidity is how long the ShushTLS service's own leaf
