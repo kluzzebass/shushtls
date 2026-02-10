@@ -10,10 +10,18 @@ A small, local-first PKI for your home or lab: run it on one machine, issue TLS 
 
 ## Quick start
 
+**macOS (Homebrew):**
+
 ```bash
-just build
-just run
+brew install kluzzebass/tap/shushtls
+shushtls
 ```
+
+**Linux / Windows:** [Releases](https://github.com/kluzzebass/shushtls/releases) provide binaries. Download for your platform, then run the binary.
+
+**From source:** `just build && just run` (or `go build . && ./shushtls`).
+
+---
 
 Open the URL shown in the log (e.g. `http://localhost:8080`). Click through setup to initialize. Then install the root CA on each device that will use your certs (macOS, Linux, Windows install scripts are in the web UI under Install CA). After that, the server is available over HTTPS and HTTP redirects to it.
 
