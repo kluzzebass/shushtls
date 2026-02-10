@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -32,7 +31,6 @@ type Server struct {
 	logger    *slog.Logger
 	readyCh   chan struct{} // closed when engine transitions to Ready
 	readyOnce sync.Once
-	lockFile  *os.File     // exclusive lock on state directory
 }
 
 // New creates a new Server with the given configuration.
@@ -94,11 +92,6 @@ func (s *Server) notifyReady() {
 func (s *Server) Run(ctx context.Context) error {
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-
-	if err := s.acquireLock(); err != nil {
-		return err
-	}
-	defer s.releaseLock()
 
 	state := s.engine.State()
 	s.logStartup(state)
@@ -321,32 +314,6 @@ func validateStateDir(dir string) error {
 		return fmt.Errorf("state path %q exists but is not a directory", dir)
 	}
 	return nil
-}
-
-// acquireLock takes an exclusive file lock on shushtls.lock inside the
-// state directory, preventing two instances from using the same state.
-func (s *Server) acquireLock() error {
-	lockPath := filepath.Join(s.config.StateDir, "shushtls.lock")
-	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		return fmt.Errorf("cannot create lock file: %w", err)
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		f.Close()
-		return fmt.Errorf("another ShushTLS instance is already using %s", s.config.StateDir)
-	}
-	s.lockFile = f
-	return nil
-}
-
-// releaseLock releases the state directory lock.
-func (s *Server) releaseLock() {
-	if s.lockFile != nil {
-		syscall.Flock(int(s.lockFile.Fd()), syscall.LOCK_UN)
-		s.lockFile.Close()
-		os.Remove(s.lockFile.Name())
-		s.lockFile = nil
-	}
 }
 
 // logStartup emits structured startup info so operators and log pipelines
