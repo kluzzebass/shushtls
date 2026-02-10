@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{block "title" .}}ShushTLS{{end}}</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/pico.min.css">
   <style>
     /* Minimal overrides — keep Pico.css doing the heavy lifting. */
@@ -34,7 +35,7 @@
   <header class="container">
     <nav>
       <ul>
-        <li><a href="/" class="brand"><strong>ShushTLS</strong></a></li>
+        <li><a href="/" class="brand">🤫 <strong>ShushTLS</strong></a></li>
       </ul>
       <ul>
         <li><a href="/"{{if eq .ActiveNav "home"}} aria-current="page"{{end}}>Status</a></li>
