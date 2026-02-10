@@ -1,5 +1,4 @@
-# Build shushtls binaries on tag push (e.g. v1.0.0).
-# Produces artifacts for linux/darwin/windows, amd64/arm64 where supported.
+# Build shushtls binaries and create a GitHub Release on tag push (e.g. v1.0.0).
 name: Build
 
 on:
@@ -7,53 +6,52 @@ on:
     tags:
       - 'v*'
 
-jobs:
-  build:
-    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: windows
-            goarch: amd64
-          - goos: windows
-            goarch: arm64
+permissions:
+  contents: write
 
+jobs:
+  release:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+          cache: false
 
-      - name: Set version
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      - name: Test
+        run: go test -v ./...
 
-      - name: Build
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 0
+      - name: Build binaries
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          BINARY="shushtls"
-          [ "${{ matrix.goos }}" = "windows" ] && BINARY="shushtls.exe"
-          go build -ldflags "-X shushtls/internal/version.Version=${VERSION}" -o "${BINARY}" .
+          VERSION=${GITHUB_REF#refs/tags/v}
+          LDFLAGS="-s -w -X shushtls/internal/version.Version=${VERSION}"
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+          mkdir -p dist
+
+          CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/shushtls-linux-amd64
+          CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/shushtls-linux-arm64
+          CGO_ENABLED=0 GOOS=darwin  GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/shushtls-darwin-amd64
+          CGO_ENABLED=0 GOOS=darwin  GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/shushtls-darwin-arm64
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/shushtls-windows-amd64.exe
+          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/shushtls-windows-arm64.exe
+
+          cd dist && sha256sum * > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
         with:
-          name: shushtls-${{ steps.version.outputs.VERSION }}-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: ${{ matrix.goos == 'windows' && 'shushtls.exe' || 'shushtls' }}
+          files: |
+            dist/shushtls-linux-amd64
+            dist/shushtls-linux-arm64
+            dist/shushtls-darwin-amd64
+            dist/shushtls-darwin-arm64
+            dist/shushtls-windows-amd64.exe
+            dist/shushtls-windows-arm64.exe
+            dist/checksums.txt
+          generate_release_notes: true
