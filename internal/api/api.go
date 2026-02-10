@@ -46,6 +46,12 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/certificates", h.handleIssueCert)
 	mux.HandleFunc("GET /api/certificates/", h.handleGetCert)
 
+	// Root CA install helper scripts (always unprotected).
+	mux.HandleFunc("GET /api/ca/install", h.handleInstallIndex)
+	mux.HandleFunc("GET /api/ca/install/macos", h.handleInstallMacOS)
+	mux.HandleFunc("GET /api/ca/install/linux", h.handleInstallLinux)
+	mux.HandleFunc("GET /api/ca/install/windows", h.handleInstallWindows)
+
 	// Method-not-allowed handlers for routes that only accept specific methods.
 	// Without these, wrong-method requests fall through to the /api/ catch-all
 	// and return 404 instead of 405.
@@ -324,6 +330,164 @@ func (h *Handler) handleGetCert(w http.ResponseWriter, r *http.Request) {
 			Error: fmt.Sprintf("unknown type %q — use \"cert\" or \"key\"", which),
 		})
 	}
+}
+
+// --- Root CA install helpers ---
+
+// InstallPlatform describes an available install script endpoint.
+type InstallPlatform struct {
+	Platform string `json:"platform"`
+	Endpoint string `json:"endpoint"`
+	Example  string `json:"example"`
+}
+
+// GET /api/ca/install — summary of available platform install scripts.
+func (h *Handler) handleInstallIndex(w http.ResponseWriter, r *http.Request) {
+	if h.engine.CA() == nil {
+		writeJSON(w, http.StatusNotFound, ErrorResponse{
+			Error: "root CA does not exist yet — run POST /api/initialize first",
+		})
+		return
+	}
+
+	base := baseURL(r)
+	platforms := []InstallPlatform{
+		{
+			Platform: "macOS",
+			Endpoint: "/api/ca/install/macos",
+			Example:  fmt.Sprintf("curl -fsSL %s/api/ca/install/macos | bash", base),
+		},
+		{
+			Platform: "Linux (Debian/Ubuntu/RHEL/Fedora)",
+			Endpoint: "/api/ca/install/linux",
+			Example:  fmt.Sprintf("curl -fsSL %s/api/ca/install/linux | sudo bash", base),
+		},
+		{
+			Platform: "Windows (PowerShell)",
+			Endpoint: "/api/ca/install/windows",
+			Example:  fmt.Sprintf("irm %s/api/ca/install/windows | iex", base),
+		},
+	}
+
+	writeJSON(w, http.StatusOK, platforms)
+}
+
+// GET /api/ca/install/macos — shell script for macOS trust store.
+func (h *Handler) handleInstallMacOS(w http.ResponseWriter, r *http.Request) {
+	if h.engine.CA() == nil {
+		writeJSON(w, http.StatusNotFound, ErrorResponse{
+			Error: "root CA does not exist yet — run POST /api/initialize first",
+		})
+		return
+	}
+
+	base := baseURL(r)
+	script := fmt.Sprintf(`#!/bin/bash
+# ShushTLS Root CA Installer — macOS
+# Usage: curl -fsSL %[1]s/api/ca/install/macos | bash
+set -euo pipefail
+
+TMPFILE=$(mktemp /tmp/shushtls-root-ca.XXXXXX.pem)
+trap 'rm -f "$TMPFILE"' EXIT
+
+echo "Downloading ShushTLS root CA..."
+curl -fsSL -o "$TMPFILE" %[1]s/api/ca/root.pem
+
+echo "Installing into macOS system trust store..."
+echo "(You may be prompted for your password.)"
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$TMPFILE"
+
+echo "Done! ShushTLS root CA is now trusted on this Mac."
+`, base)
+
+	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
+	w.Write([]byte(script))
+}
+
+// GET /api/ca/install/linux — shell script for Linux trust stores.
+func (h *Handler) handleInstallLinux(w http.ResponseWriter, r *http.Request) {
+	if h.engine.CA() == nil {
+		writeJSON(w, http.StatusNotFound, ErrorResponse{
+			Error: "root CA does not exist yet — run POST /api/initialize first",
+		})
+		return
+	}
+
+	base := baseURL(r)
+	script := fmt.Sprintf(`#!/bin/bash
+# ShushTLS Root CA Installer — Linux
+# Usage: curl -fsSL %[1]s/api/ca/install/linux | sudo bash
+set -euo pipefail
+
+echo "Downloading ShushTLS root CA..."
+
+# Detect distro family and install accordingly.
+if command -v update-ca-certificates >/dev/null 2>&1; then
+    # Debian / Ubuntu / Alpine
+    curl -fsSL -o /usr/local/share/ca-certificates/shushtls-root-ca.crt %[1]s/api/ca/root.pem
+    update-ca-certificates
+    echo "Done! Root CA installed via update-ca-certificates."
+elif command -v update-ca-trust >/dev/null 2>&1; then
+    # RHEL / Fedora / CentOS
+    curl -fsSL -o /etc/pki/ca-trust/source/anchors/shushtls-root-ca.pem %[1]s/api/ca/root.pem
+    update-ca-trust extract
+    echo "Done! Root CA installed via update-ca-trust."
+else
+    echo "Error: Could not find update-ca-certificates or update-ca-trust."
+    echo "Please install the root CA manually:"
+    echo "  curl -fsSL -o shushtls-root-ca.pem %[1]s/api/ca/root.pem"
+    exit 1
+fi
+`, base)
+
+	w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
+	w.Write([]byte(script))
+}
+
+// GET /api/ca/install/windows — PowerShell script for Windows trust store.
+func (h *Handler) handleInstallWindows(w http.ResponseWriter, r *http.Request) {
+	if h.engine.CA() == nil {
+		writeJSON(w, http.StatusNotFound, ErrorResponse{
+			Error: "root CA does not exist yet — run POST /api/initialize first",
+		})
+		return
+	}
+
+	base := baseURL(r)
+	script := fmt.Sprintf(`# ShushTLS Root CA Installer — Windows (PowerShell)
+# Usage: irm %[1]s/api/ca/install/windows | iex
+# Must be run as Administrator.
+
+$ErrorActionPreference = "Stop"
+
+$tmpFile = Join-Path $env:TEMP "shushtls-root-ca.pem"
+
+Write-Host "Downloading ShushTLS root CA..."
+Invoke-WebRequest -Uri "%[1]s/api/ca/root.pem" -OutFile $tmpFile
+
+Write-Host "Installing into Windows certificate store (LocalMachine\Root)..."
+$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($tmpFile)
+$store = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
+$store.Open("ReadWrite")
+$store.Add($cert)
+$store.Close()
+
+Remove-Item $tmpFile -Force
+Write-Host "Done! ShushTLS root CA is now trusted on this machine."
+`, base)
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write([]byte(script))
+}
+
+// baseURL builds the scheme://host prefix from the incoming request,
+// used by install scripts to self-reference the ShushTLS instance.
+func baseURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
 }
 
 // --- Helpers ---

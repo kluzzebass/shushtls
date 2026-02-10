@@ -533,6 +533,143 @@ func TestErrorResponse_IsJSON(t *testing.T) {
 	}
 }
 
+// --- GET /api/ca/install ---
+
+func TestInstallIndex_BeforeInit(t *testing.T) {
+	h, _ := newTestHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "GET", "/api/ca/install", "")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestInstallIndex_AfterInit(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "GET", "/api/ca/install", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	var platforms []InstallPlatform
+	if err := json.NewDecoder(w.Body).Decode(&platforms); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(platforms) != 3 {
+		t.Errorf("expected 3 platforms, got %d", len(platforms))
+	}
+	// Each should have non-empty fields.
+	for _, p := range platforms {
+		if p.Platform == "" {
+			t.Error("platform name is empty")
+		}
+		if p.Endpoint == "" {
+			t.Error("endpoint is empty")
+		}
+		if p.Example == "" {
+			t.Error("example is empty")
+		}
+	}
+}
+
+// --- GET /api/ca/install/{platform} ---
+
+func TestInstallMacOS_BeforeInit(t *testing.T) {
+	h, _ := newTestHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "GET", "/api/ca/install/macos", "")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestInstallMacOS_Script(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "GET", "/api/ca/install/macos", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "#!/bin/bash") {
+		t.Error("macOS script missing shebang")
+	}
+	if !strings.Contains(body, "security add-trusted-cert") {
+		t.Error("macOS script missing security command")
+	}
+	if !strings.Contains(body, "/api/ca/root.pem") {
+		t.Error("macOS script missing root CA download URL")
+	}
+}
+
+func TestInstallLinux_Script(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "GET", "/api/ca/install/linux", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "#!/bin/bash") {
+		t.Error("linux script missing shebang")
+	}
+	if !strings.Contains(body, "update-ca-certificates") {
+		t.Error("linux script missing Debian/Ubuntu path")
+	}
+	if !strings.Contains(body, "update-ca-trust") {
+		t.Error("linux script missing RHEL/Fedora path")
+	}
+	if !strings.Contains(body, "/api/ca/root.pem") {
+		t.Error("linux script missing root CA download URL")
+	}
+}
+
+func TestInstallWindows_Script(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "GET", "/api/ca/install/windows", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "X509Store") {
+		t.Error("windows script missing certificate store commands")
+	}
+	if !strings.Contains(body, "/api/ca/root.pem") {
+		t.Error("windows script missing root CA download URL")
+	}
+}
+
+func TestInstallScripts_UseRequestHost(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	// Use a custom Host header to verify scripts embed it.
+	req := httptest.NewRequest("GET", "/api/ca/install/macos", nil)
+	req.Host = "nas.local:8443"
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "nas.local:8443") {
+		t.Error("script does not reference the request host")
+	}
+}
+
 // --- Method not allowed ---
 
 func TestInitialize_WrongMethod(t *testing.T) {

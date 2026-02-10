@@ -96,6 +96,7 @@ type pageData struct {
 	State     string
 	Host      string
 	Scheme    string
+	BaseURL   string // scheme://host for self-referencing URLs
 	RootCA    *caInfo
 	Certs     []certInfo
 }
@@ -119,11 +120,13 @@ type certInfo struct {
 func (h *Handler) buildPageData(r *http.Request, activeNav string) pageData {
 	state := h.engine.State()
 
+	scheme := requestScheme(r)
 	pd := pageData{
 		ActiveNav: activeNav,
 		State:     state.String(),
 		Host:      r.Host,
-		Scheme:    requestScheme(r),
+		Scheme:    scheme,
+		BaseURL:   scheme + "://" + r.Host,
 	}
 
 	if ca := h.engine.CA(); ca != nil {
