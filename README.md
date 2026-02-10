@@ -227,7 +227,7 @@ For whoever returns to this system after a long time.
 - **Leaf certs:** Re-issue before expiry from Certificates and deploy the new cert to your service. Use the [longevity table](#certificate-longevity-leaf-certs) to plan; the UI shows each cert’s validity.
 - **Root CA:** Default validity is 25 years. If it ever approaches expiry, you’d generate a new root (e.g. new state dir) and re-install trust on all devices.
 
-**Rebuilding the binary:** `just build` (or `go build -o shushtls .`). Tests: `just test`. Run: `just run` or `./shushtls` with optional flags. Dependencies are in `go.mod` / `go.sum`; requires a Go toolchain.
+**Rebuilding the binary:** `just build` (or `go build -o shushtls .`). Tests: `just test`. Run: `just run` or `./shushtls` with optional flags. Dependencies are in `go.mod` / `go.sum`; requires a Go toolchain. The version in the UI footer defaults to `dev`; for a release build use `just build-release 1.0.0` or `go build -ldflags "-X shushtls/internal/version.Version=1.0.0" -o shushtls .`.
 
 **Troubleshooting**
 

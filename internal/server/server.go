@@ -18,6 +18,7 @@ import (
 	"shushtls/internal/auth"
 	"shushtls/internal/certengine"
 	"shushtls/internal/ui"
+	"shushtls/internal/version"
 )
 
 // Server is the main ShushTLS application server. It always starts an HTTP
@@ -229,7 +230,7 @@ func (s *Server) buildMux() (*http.ServeMux, error) {
 	})
 
 	// Register web UI routes.
-	uiHandler, err := ui.NewHandler(s.engine, s.authStore, s.logger)
+	uiHandler, err := ui.NewHandler(s.engine, s.authStore, s.logger, version.Version)
 	if err != nil {
 		return nil, fmt.Errorf("initialize UI: %w", err)
 	}

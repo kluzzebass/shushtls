@@ -4,6 +4,10 @@
 build:
     go build -o shushtls .
 
+# Build with version for release (e.g. just build-release 1.0.0).
+build-release version:
+    go build -ldflags "-X shushtls/internal/version.Version={{ version }}" -o shushtls .
+
 # Run all tests.
 test:
     go test -count=1 -timeout 60s ./...

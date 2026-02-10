@@ -27,16 +27,18 @@ type Handler struct {
 	engine    *certengine.Engine
 	authStore *auth.Store // optional; nil if auth is not available
 	logger    *slog.Logger
+	version   string
 	templates map[string]*template.Template
 }
 
 // NewHandler creates a UI handler backed by the given engine.
-// The authStore may be nil to disable auth UI.
-func NewHandler(engine *certengine.Engine, authStore *auth.Store, logger *slog.Logger) (*Handler, error) {
+// The authStore may be nil to disable auth UI. version is shown in the UI footer.
+func NewHandler(engine *certengine.Engine, authStore *auth.Store, logger *slog.Logger, version string) (*Handler, error) {
 	h := &Handler{
 		engine:    engine,
 		authStore: authStore,
 		logger:    logger,
+		version:   version,
 	}
 	if err := h.loadTemplates(); err != nil {
 		return nil, fmt.Errorf("load templates: %w", err)
@@ -104,6 +106,7 @@ type pageData struct {
 	Scheme      string
 	BaseURL     string // scheme://host for self-referencing URLs
 	AuthEnabled bool
+	Version     string
 	RootCA      *caInfo
 	Certs       []certInfo
 }
@@ -135,6 +138,7 @@ func (h *Handler) buildPageData(r *http.Request, activeNav string) pageData {
 		Scheme:      scheme,
 		BaseURL:     scheme + "://" + r.Host,
 		AuthEnabled: h.authStore != nil && h.authStore.IsEnabled(),
+		Version:     h.version,
 	}
 
 	if ca := h.engine.CA(); ca != nil {
