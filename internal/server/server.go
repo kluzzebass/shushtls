@@ -37,9 +37,10 @@ type Server struct {
 
 // New creates a new Server with the given configuration.
 func New(cfg Config) (*Server, error) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 
 	if err := validateStateDir(cfg.StateDir); err != nil {
 		return nil, err

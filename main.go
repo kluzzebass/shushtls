@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -19,7 +20,13 @@ func main() {
 	)
 	flag.Parse()
 
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
 	cfg := server.Config{
+		Logger:       logger,
 		StateDir:     *stateDir,
 		HTTPAddr:     *httpAddr,
 		HTTPSAddr:    *httpsAddr,

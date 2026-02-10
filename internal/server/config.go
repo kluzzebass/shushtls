@@ -3,12 +3,16 @@
 package server
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 )
 
 // Config holds the configuration for the ShushTLS server.
 type Config struct {
+	// Logger is the logger for server and request logging. If nil, slog.Default() is used.
+	Logger *slog.Logger
+
 	// StateDir is the directory where all persistent state is stored
 	// (CA material, issued certificates, etc.).
 	StateDir string
