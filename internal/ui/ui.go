@@ -50,7 +50,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /setup", h.handleSetup)
 	mux.HandleFunc("GET /trust", h.handleTrust)
 	mux.HandleFunc("GET /certificates", h.handleCertificates)
-	mux.HandleFunc("GET /settings", h.handleSettings)
+	mux.HandleFunc("GET /settings", h.requireAuth(h.handleSettings))
 
 	// Serve embedded static assets (JS, etc.).
 	staticFS, _ := fs.Sub(templateFS, "templates/static")
@@ -145,6 +145,25 @@ func (h *Handler) buildPageData(r *http.Request, activeNav string) pageData {
 	}
 
 	return pd
+}
+
+// requireAuth wraps a UI handler with Basic Auth when auth is enabled.
+func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if h.authStore == nil || !h.authStore.IsEnabled() {
+			next(w, r)
+			return
+		}
+
+		username, password, ok := r.BasicAuth()
+		if !ok || !h.authStore.Verify(username, password) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="ShushTLS"`)
+			http.Error(w, "authentication required", http.StatusUnauthorized)
+			return
+		}
+
+		next(w, r)
+	}
 }
 
 // --- Page handlers ---
