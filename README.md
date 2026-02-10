@@ -17,6 +17,20 @@ just run
 
 Open the URL shown in the log (e.g. `http://localhost:8080`). Click through setup to initialize. Then install the root CA on each device that will use your certs (macOS, Linux, Windows install scripts are in the web UI under Install CA). After that, the server is available over HTTPS and HTTP redirects to it.
 
+### Web UI
+
+**Setup** — One-time initialization (root CA + service cert).
+
+![Setup](assets/setup.png)
+
+**Install CA** — Platform-specific scripts to install the root on macOS, Linux, and Windows.
+
+![Install CA](assets/install_ca.png)
+
+**Certificates** — Issue leaf certs and download cert, key, or zip bundle.
+
+![Certificates](assets/certificates.png)
+
 ### Flags
 
 | Flag | Default | Description |
@@ -51,8 +65,8 @@ The code may be updated over time to use the shorter validity as the dates take 
 
 1. **First start.** Server starts in HTTP-only mode. Logs show the URL (e.g. `http://localhost:8080`).
 2. **Initialize.** Open that URL, complete setup. ShushTLS generates the root CA and its own service certificate (for the ShushTLS UI/API over HTTPS).
-3. **Install trust.** On each device (Mac, Linux, Windows, etc.), run the install script or download the root PEM and add it to the system/browser trust store. The UI links to platform-specific one-liners.
-4. **HTTPS active.** As soon as initialization completes, the server enables HTTPS and redirects HTTP to it. No restart. Use the HTTPS URL from the logs and continue issuing certs from the UI.
+3. **HTTPS active.** As soon as initialization completes, the server enables HTTPS and redirects HTTP to it. No restart. Until you install the root CA on a device, that device will show an untrusted certificate warning when you open the UI over HTTPS—accept or bypass the warning to continue (you need the UI to get the install script).
+4. **Install trust.** On each device (Mac, Linux, Windows, etc.), run the install script or download the root PEM and add it to the system/browser trust store. The UI links to platform-specific one-liners. After that, the browser will trust ShushTLS and your issued certs on that device.
 
 If you start with an empty state directory, you always get step 1 → 2 → 3 → 4. If you start with an existing state dir (already initialized), the server goes straight to HTTPS and redirect.
 

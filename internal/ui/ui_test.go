@@ -179,7 +179,7 @@ func TestCertificates_WithCerts(t *testing.T) {
 // --- Navigation tests ---
 
 func TestNavigation_ActivePageHighlighted(t *testing.T) {
-	// Uninitialized: /, /setup, /trust show reduced nav; Certificates/Docs need full nav.
+	// Uninitialized: only / and /setup (Setup link only); /trust, /certificates, /docs use full nav.
 	uninit, _ := newTestHandler(t)
 	initH, _ := newInitializedHandler(t)
 	muxUninit := serveMux(uninit)
@@ -191,7 +191,7 @@ func TestNavigation_ActivePageHighlighted(t *testing.T) {
 	}{
 		{"/", muxUninit},
 		{"/setup", muxUninit},
-		{"/trust", muxUninit},
+		{"/trust", muxInit},
 		{"/certificates", muxInit},
 		{"/docs", muxInit},
 	}

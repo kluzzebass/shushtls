@@ -26,7 +26,6 @@
       <ul>
         {{if eq .State "uninitialized"}}
         <li><a href="/"{{if eq .ActiveNav "setup"}} aria-current="page"{{end}}>Setup</a></li>
-        <li><a href="/trust"{{if eq .ActiveNav "trust"}} aria-current="page"{{end}}>Install CA</a></li>
         {{else}}
         <li><a href="/"{{if eq .ActiveNav "trust"}} aria-current="page"{{end}}>Install CA</a></li>
         <li><a href="/certificates"{{if eq .ActiveNav "certificates"}} aria-current="page"{{end}}>Certificates</a></li>
@@ -45,7 +44,7 @@
 
   <footer class="container">
     <hr>
-    <p><a href="/about">ShushTLS</a> &mdash; HTTPS for your home network.</p>
+    <p><a href="/about">ShushTLS</a>{{if .About.Copyright}} · {{.About.Copyright}}{{end}} &mdash; HTTPS for your home network.</p>
   </footer>
   <script src="/static/app.js" defer></script>
 </body>

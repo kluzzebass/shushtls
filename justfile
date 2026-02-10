@@ -22,7 +22,7 @@ test:
 
 # Run the server (dev mode).
 run:
-    go run .
+    go run . -state-dir state
 
 # Remove build artifacts.
 clean:

@@ -959,6 +959,11 @@ footer.container {
   opacity: .4;
   padding-bottom: 2rem;
 }
+footer.container p {
+  text-align: center;
+  max-width: none;
+  margin-inline: auto;
+}
 footer hr {
   background: var(--gradient);
   opacity: .2;
