@@ -66,11 +66,12 @@ func (s State) String() string {
 // Engine is the top-level interface to the certificate engine. It wraps
 // the store and provides idempotent, high-level operations.
 type Engine struct {
-	store       *Store
-	ca          *CACert                // cached after load/generate
-	certs       map[string]*LeafCert   // stored certs (service + legacy), keyed by primary SAN
-	configs     map[string][]string    // registered SAN configs (on-demand), keyed by primary SAN
-	serviceHost string                 // primary SAN of the ShushTLS service cert
+	store             *Store
+	ca                *CACert                // cached after load/generate
+	certs             map[string]*LeafCert   // stored certs (service + legacy), keyed by primary SAN
+	configs           map[string][]string    // registered SAN configs (on-demand), keyed by primary SAN
+	serviceHost       string                 // primary SAN of the ShushTLS service cert
+	defaultLeafSubject LeafSubjectParams     // default O, OU, C, L, ST for leaf certs
 }
 
 // New creates a new Engine backed by the given state directory.
@@ -129,7 +130,7 @@ func (e *Engine) Initialize(serviceHosts []string, caParams CAParams) (State, er
 	// Step 2: Service certificate (for ShushTLS's own HTTPS listener)
 	e.serviceHost = serviceHosts[0]
 	if e.certs[e.serviceHost] == nil {
-		leaf, err := IssueCertificateWithValidity(e.ca, serviceHosts, SC081MaxLeafValidity(time.Now()))
+		leaf, err := IssueCertificateWithValidityAndSubject(e.ca, serviceHosts, SC081MaxLeafValidity(time.Now()), e.defaultLeafSubject)
 		if err != nil {
 			return e.State(), fmt.Errorf("generate service cert: %w", err)
 		}
@@ -152,9 +153,10 @@ func (e *Engine) Initialize(serviceHosts []string, caParams CAParams) (State, er
 // other SANs only the SAN config is persisted; the cert is generated on download
 // with SC-081 validity. Idempotent: if the primary SAN is already registered,
 // returns a list item (stored cert or stub for on-demand).
+// subjectOverride, when non-nil, is used for the cert (service) or saved for on-demand.
 //
 // Requires the root CA to exist (State >= Initialized).
-func (e *Engine) IssueCert(dnsNames []string) (*CertListItem, error) {
+func (e *Engine) IssueCert(dnsNames []string, subjectOverride *LeafSubjectParams) (*CertListItem, error) {
 	if e.ca == nil {
 		return nil, fmt.Errorf("cannot issue certificate: root CA does not exist (run Initialize first)")
 	}
@@ -163,13 +165,17 @@ func (e *Engine) IssueCert(dnsNames []string) (*CertListItem, error) {
 	}
 
 	primarySAN := dnsNames[0]
+	subject := e.defaultLeafSubject
+	if subjectOverride != nil {
+		subject = subjectOverride.WithDefaults()
+	}
 
 	// Service cert: generate and store (only when created during Initialize).
 	if primarySAN == e.serviceHost {
 		if existing := e.certs[primarySAN]; existing != nil {
 			return &CertListItem{Leaf: existing, PrimarySAN: primarySAN, DNSNames: existing.Cert.DNSNames}, nil
 		}
-		leaf, err := IssueCertificateWithValidity(e.ca, dnsNames, SC081MaxLeafValidity(time.Now()))
+		leaf, err := IssueCertificateWithValidityAndSubject(e.ca, dnsNames, SC081MaxLeafValidity(time.Now()), subject)
 		if err != nil {
 			return nil, fmt.Errorf("generate service cert: %w", err)
 		}
@@ -193,6 +199,11 @@ func (e *Engine) IssueCert(dnsNames []string) (*CertListItem, error) {
 	if err := e.store.SaveSANConfig(primarySAN, expanded); err != nil {
 		return nil, fmt.Errorf("save SAN config for %s: %w", primarySAN, err)
 	}
+	if subjectOverride != nil {
+		if err := e.store.SaveLeafSubjectForSAN(primarySAN, subject); err != nil {
+			return nil, fmt.Errorf("save subject override for %s: %w", primarySAN, err)
+		}
+	}
 	e.configs[primarySAN] = expanded
 	return &CertListItem{PrimarySAN: primarySAN, DNSNames: expanded}, nil
 }
@@ -200,7 +211,8 @@ func (e *Engine) IssueCert(dnsNames []string) (*CertListItem, error) {
 // GetCert returns a certificate for the given primary SAN for download.
 // For the service cert or any stored (legacy) cert, returns the stored cert.
 // For registered on-demand SANs, generates a fresh cert with SC-081 validity
-// and returns it (not persisted). Returns nil if the SAN is not registered.
+// and returns it (not persisted). Subject uses per-SAN override if saved, else default.
+// Returns nil if the SAN is not registered.
 func (e *Engine) GetCert(primarySAN string) *LeafCert {
 	if leaf := e.certs[primarySAN]; leaf != nil {
 		return leaf
@@ -209,7 +221,11 @@ func (e *Engine) GetCert(primarySAN string) *LeafCert {
 	if err != nil || len(dnsNames) == 0 {
 		return nil
 	}
-	leaf, err := IssueCertificateWithValidity(e.ca, dnsNames, SC081MaxLeafValidity(time.Now()))
+	subject := e.defaultLeafSubject
+	if over, ok := e.store.LoadLeafSubjectForSAN(primarySAN); ok {
+		subject = over
+	}
+	leaf, err := IssueCertificateWithValidityAndSubject(e.ca, dnsNames, SC081MaxLeafValidity(time.Now()), subject)
 	if err != nil {
 		return nil
 	}
@@ -299,6 +315,8 @@ func (e *Engine) load() error {
 		e.serviceHost = host
 	}
 
+	e.defaultLeafSubject = e.store.LoadLeafSubjectParams()
+
 	// Rotate service cert if it exceeds current SC-081 max validity (e.g. after a step-down date).
 	if e.serviceHost != "" && e.certs[e.serviceHost] != nil {
 		svc := e.certs[e.serviceHost]
@@ -307,7 +325,7 @@ func (e *Engine) load() error {
 		remaining := svc.Cert.NotAfter.Sub(now)
 		if remaining > maxValidity {
 			dnsNames := svc.Cert.DNSNames
-			newLeaf, err := IssueCertificateWithValidity(e.ca, dnsNames, maxValidity)
+			newLeaf, err := IssueCertificateWithValidityAndSubject(e.ca, dnsNames, maxValidity, e.defaultLeafSubject)
 			if err != nil {
 				return fmt.Errorf("rotate service cert: %w", err)
 			}
@@ -336,7 +354,7 @@ func (e *Engine) DesignateServiceCert(primarySAN string) error {
 		if err != nil || len(dnsNames) == 0 {
 			return fmt.Errorf("no certificate found for %q", primarySAN)
 		}
-		leaf, err := IssueCertificateWithValidity(e.ca, dnsNames, SC081MaxLeafValidity(time.Now()))
+		leaf, err := IssueCertificateWithValidityAndSubject(e.ca, dnsNames, SC081MaxLeafValidity(time.Now()), e.defaultLeafSubject)
 		if err != nil {
 			return fmt.Errorf("generate service cert for %s: %w", primarySAN, err)
 		}
@@ -361,4 +379,20 @@ func (e *Engine) DesignateServiceCert(primarySAN string) error {
 // to re-associate the service cert.
 func (e *Engine) SetServiceHost(host string) {
 	e.serviceHost = host
+}
+
+// DefaultLeafSubject returns the current default subject params for leaf certificates.
+func (e *Engine) DefaultLeafSubject() LeafSubjectParams {
+	return e.defaultLeafSubject
+}
+
+// SetDefaultLeafSubject updates the default subject params for leaf certificates
+// and persists them to disk. Future issued certs (and on-demand downloads) use these.
+func (e *Engine) SetDefaultLeafSubject(p LeafSubjectParams) error {
+	p = p.WithDefaults()
+	if err := e.store.SaveLeafSubjectParams(p); err != nil {
+		return err
+	}
+	e.defaultLeafSubject = p
+	return nil
 }

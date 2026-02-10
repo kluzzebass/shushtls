@@ -68,10 +68,37 @@
 </article>
 {{end}}
 
+<h2>Certificate subject defaults</h2>
+<article>
+  <p>These fields are used for the <strong>O</strong> (Organization), <strong>OU</strong> (Organizational Unit), <strong>C</strong> (Country), <strong>L</strong> (Locality), and <strong>ST</strong> (State/Province) in issued leaf certificates. The common name (CN) is always the primary hostname. Leave blank to use defaults (Organization only).</p>
+  <form id="leaf-subject-form">
+    <label for="leaf-organization">Organization (O)<input type="text" id="leaf-organization" name="organization" value="{{.LeafSubject.Organization}}" placeholder="ShushTLS"></label>
+    <label for="leaf-organizational-unit">Organizational unit (OU)<input type="text" id="leaf-organizational-unit" name="organizational_unit" value="{{.LeafSubject.OrganizationalUnit}}" placeholder="(optional)"></label>
+    <label for="leaf-country">Country (C)
+      <select id="leaf-country" name="country">
+        <option value="">(none)</option>
+        {{range .CountryCodes}}<option value="{{.Code}}" {{if eq .Code $.LeafSubject.Country}}selected{{end}}>{{.Code}} — {{.Name}}</option>{{end}}
+      </select>
+    </label>
+    <label for="leaf-locality">Locality (L)<input type="text" id="leaf-locality" name="locality" value="{{.LeafSubject.Locality}}" placeholder="(optional)"></label>
+    <label for="leaf-province">State / Province (ST)<input type="text" id="leaf-province" name="province" value="{{.LeafSubject.Province}}" placeholder="(optional)"></label>
+    <button type="submit" id="leaf-subject-btn">Save subject defaults</button>
+  </form>
+  <div id="leaf-subject-result" hidden></div>
+</article>
+
 <noscript>
   <article>
     <p><strong>Without JavaScript:</strong></p>
-    <pre><code># Enable auth:
+    <pre><code># Get current leaf subject defaults:
+curl -sS {{.BaseURL}}/api/leaf-subject
+
+# Update leaf subject defaults:
+curl -X PUT {{.BaseURL}}/api/leaf-subject \
+  -H "Content-Type: application/json" \
+  -d '{"organization": "My Org", "organizational_unit": "IT", "country": "US"}'
+
+# Enable auth:
 curl -X POST {{.BaseURL}}/api/auth \
   -H "Content-Type: application/json" \
   -d '{"enabled": true, "username": "admin", "password": "your-password"}'

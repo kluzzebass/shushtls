@@ -32,6 +32,7 @@ func (l *LeafCert) PrimarySAN() string {
 // IssueCertificate generates a leaf certificate with the given DNS names,
 // signed by the provided CA. The first name in dnsNames becomes the
 // primary SAN and the certificate's CommonName. Validity uses LeafCertValidity.
+// Subject O/OU/C/L/ST use default leaf subject (Organization only).
 //
 // If any name contains a wildcard (e.g. "*.home.arpa"), the bare domain
 // is automatically added as an additional SAN if not already present.
@@ -44,10 +45,19 @@ func IssueCertificate(ca *CACert, dnsNames []string) (*LeafCert, error) {
 
 // IssueCertificateWithValidity is like IssueCertificate but uses the given
 // validity duration (e.g. SC081MaxLeafValidity(time.Now()) for browser-accepted certs).
+// Subject uses default leaf params (Organization only).
 func IssueCertificateWithValidity(ca *CACert, dnsNames []string, validity time.Duration) (*LeafCert, error) {
+	return IssueCertificateWithValidityAndSubject(ca, dnsNames, validity, LeafSubjectParams{}.WithDefaults())
+}
+
+// IssueCertificateWithValidityAndSubject is like IssueCertificateWithValidity but
+// uses the given subject params for O, OU, C, L, ST; CN is always the primary SAN.
+func IssueCertificateWithValidityAndSubject(ca *CACert, dnsNames []string, validity time.Duration, subject LeafSubjectParams) (*LeafCert, error) {
 	if len(dnsNames) == 0 {
 		return nil, fmt.Errorf("at least one DNS name is required")
 	}
+
+	subject = subject.WithDefaults()
 
 	// Expand wildcard SANs: if *.example.com is requested, also include
 	// example.com so the bare domain works too.
@@ -81,14 +91,31 @@ func IssueCertificateWithValidity(ca *CACert, dnsNames []string, validity time.D
 	}
 	ski := sha256.Sum256(spki.PublicKey.Bytes)
 
+	// Build subject from params; CN is always the primary SAN.
+	name := pkix.Name{
+		CommonName: dnsNames[0],
+	}
+	if subject.Organization != "" {
+		name.Organization = []string{subject.Organization}
+	}
+	if subject.OrganizationalUnit != "" {
+		name.OrganizationalUnit = []string{subject.OrganizationalUnit}
+	}
+	if subject.Country != "" {
+		name.Country = []string{subject.Country}
+	}
+	if subject.Locality != "" {
+		name.Locality = []string{subject.Locality}
+	}
+	if subject.Province != "" {
+		name.Province = []string{subject.Province}
+	}
+
 	now := time.Now()
 	template := &x509.Certificate{
 		SerialNumber: serial,
-		Subject: pkix.Name{
-			Organization: []string{DefaultCAOrganization},
-			CommonName:   dnsNames[0],
-		},
-		DNSNames:              expanded,
+		Subject:      name,
+		DNSNames:     expanded,
 		NotBefore:             now,
 		NotAfter:              now.Add(validity),
 		KeyUsage:              LeafKeyUsages,

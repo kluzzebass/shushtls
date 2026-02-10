@@ -162,7 +162,7 @@ func TestCertificates_WithCerts(t *testing.T) {
 	mux := serveMux(h)
 
 	// Issue an extra cert.
-	if _, err := engine.IssueCert([]string{"*.home.arpa"}); err != nil {
+	if _, err := engine.IssueCert([]string{"*.home.arpa"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 

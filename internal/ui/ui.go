@@ -118,6 +118,8 @@ type pageData struct {
 	About       AboutInfo
 	RootCA      *caInfo
 	Certs       []certInfo
+	LeafSubject certengine.LeafSubjectParams // default O, OU, C, L, ST for leaf certs (settings page)
+	CountryCodes []CountryCode               // ISO 3166-1 alpha-2 for C field datalist and reference table
 }
 
 type caInfo struct {
@@ -157,6 +159,12 @@ func (h *Handler) buildPageData(r *http.Request, activeNav string) pageData {
 	for _, item := range h.engine.ListCerts() {
 		pd.Certs = append(pd.Certs, buildCertInfoFromItem(item, h.engine.ServiceHost()))
 	}
+
+	if state != certengine.Uninitialized {
+		pd.LeafSubject = h.engine.DefaultLeafSubject()
+	}
+
+	pd.CountryCodes = CountryCodes
 
 	return pd
 }

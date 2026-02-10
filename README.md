@@ -79,6 +79,7 @@ As certificate validity periods get shorter (see [Certificate longevity](#certif
 | POST | `/api/certificates` | yes | Register a certificate (SAN config). Body: `{"dns_names": ["host.example.com", "*.example.com"]}`. Idempotent. The actual cert and key are generated on download (GET). |
 | GET | `/api/certificates/{primary_san}` | no | Download certificate PEM. Example: `GET /api/certificates/nas.home.arpa` |
 | GET | `/api/certificates/{primary_san}?type=key` | yes | Download private key PEM. Requires auth when auth is enabled. |
+| GET | `/api/certificates/{primary_san}?type=zip` | yes | Download cert+key bundle (zip). Matching pair guaranteed. Requires auth when auth is enabled. |
 | GET | `/api/ca/root.pem` | no | Download root CA certificate (PEM). |
 
 `{primary_san}` is the first DNS name in the certificate (e.g. `nas.home.arpa` or `*.home.arpa`). For wildcards, the path uses the literal `*` (URL-encode as `%2A` if needed).
@@ -138,9 +139,10 @@ curl -sS -X POST "$BASE/api/certificates" \
   -H "Content-Type: application/json" \
   -d "{\"dns_names\": [\"$SAN\"]}" | jq .
 
-# Download cert and key (key requires auth if enabled)
+# Download cert and key (key requires auth if enabled). Or use ?type=zip for a matching pair in one request.
 curl -sS -o cert.pem "$BASE/api/certificates/$SAN"
 curl -sS -o key.pem -u user:pass "$BASE/api/certificates/$SAN?type=key"
+# Or: curl -sS -o bundle.zip -u user:pass "$BASE/api/certificates/$SAN?type=zip"
 ```
 
 ### Other endpoints
@@ -148,6 +150,12 @@ curl -sS -o key.pem -u user:pass "$BASE/api/certificates/$SAN?type=key"
 - **GET /api/status** — JSON: `state`, `serving_mode`, `root_ca` (if any), `certificates` (same shape as list). Protected when auth is on.
 - **POST /api/initialize** — One-time setup (body optional). Protected when auth is on.
 - **POST /api/service-cert** — Set which cert is used for ShushTLS’s HTTPS. Body: `{"primary_san": "host.example.com"}`. Protected when auth is on.
+- **GET /api/leaf-subject** — JSON: default subject params (O, OU, C, L, ST) for leaf certs. Protected when auth is on.
+- **PUT /api/leaf-subject** — Update default subject. Body: `{"organization": "My Org", "organizational_unit": "IT", "country": "US", "locality": "City", "province": "ST"}` (all optional). Protected when auth is on.
+
+## Certificate subject defaults
+
+After initialization, you can set default subject fields (Organization, OU, Country, Locality, State/Province) for issued leaf certificates in **Settings**. The common name (CN) is always the primary hostname. These defaults apply to all newly issued and on-demand certificates.
 
 ## Optional auth
 

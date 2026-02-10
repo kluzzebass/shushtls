@@ -32,7 +32,8 @@
         <td>{{if .IsService}}<mark>service</mark>{{else}}issued{{end}}</td>
         <td>
           <a href="/api/certificates/{{.PrimarySAN}}">cert</a> &middot;
-          <a href="/api/certificates/{{.PrimarySAN}}?type=key">key</a>
+          <a href="/api/certificates/{{.PrimarySAN}}?type=key">key</a> &middot;
+          <a href="/api/certificates/{{.PrimarySAN}}?type=zip">zip</a>
         </td>
         <td>
           {{if not .IsService}}
@@ -60,6 +61,22 @@
              aria-label="Comma-separated DNS names" required>
       <small>Comma-separated. Use *.domain for wildcards.</small>
     </label>
+
+    <details>
+      <summary>Subject (optional)</summary>
+      <p>Pre-filled from defaults in <a href="/settings">Settings</a>. Change any field to override for this certificate only. CN is always the first DNS name.</p>
+      <label for="issue-organization">Organization (O)<input type="text" id="issue-organization" name="organization" value="{{.LeafSubject.Organization}}" placeholder="(none)"></label>
+      <label for="issue-organizational-unit">Organizational unit (OU)<input type="text" id="issue-organizational-unit" name="organizational_unit" value="{{.LeafSubject.OrganizationalUnit}}" placeholder="(none)"></label>
+      <label for="issue-country">Country (C)
+      <select id="issue-country" name="country">
+        <option value="">(none)</option>
+        {{range .CountryCodes}}<option value="{{.Code}}" {{if eq .Code $.LeafSubject.Country}}selected{{end}}>{{.Code}} — {{.Name}}</option>{{end}}
+      </select>
+    </label>
+      <label for="issue-locality">Locality (L)<input type="text" id="issue-locality" name="locality" value="{{.LeafSubject.Locality}}" placeholder="(none)"></label>
+      <label for="issue-province">State / Province (ST)<input type="text" id="issue-province" name="province" value="{{.LeafSubject.Province}}" placeholder="(none)"></label>
+    </details>
+
     <button type="submit" id="issue-btn">Issue Certificate</button>
   </form>
 

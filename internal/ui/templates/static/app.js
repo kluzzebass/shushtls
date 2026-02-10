@@ -90,11 +90,27 @@
         return;
       }
 
+      var body = { dns_names: dnsNames };
+      var orgEl = document.getElementById("issue-organization");
+      var ouEl = document.getElementById("issue-organizational-unit");
+      var countryEl = document.getElementById("issue-country");
+      var localityEl = document.getElementById("issue-locality");
+      var provinceEl = document.getElementById("issue-province");
+      function v(el) { return el ? el.value.trim() : ""; }
+      if (orgEl && (v(orgEl) || v(ouEl) || v(countryEl) || v(localityEl) || v(provinceEl))) {
+        body.subject = {};
+        if (v(orgEl)) body.subject.organization = v(orgEl);
+        if (v(ouEl)) body.subject.organizational_unit = v(ouEl);
+        if (v(countryEl)) body.subject.country = v(countryEl);
+        if (v(localityEl)) body.subject.locality = v(localityEl);
+        if (v(provinceEl)) body.subject.province = v(provinceEl);
+      }
+
       try {
         const resp = await fetch("/api/certificates", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dns_names: dnsNames }),
+          body: JSON.stringify(body),
         });
 
         const data = await resp.json();
@@ -227,6 +243,53 @@
           showError(authResult, "Network error: " + err.message);
           authDisableBtn.setAttribute("aria-busy", "false");
           authDisableBtn.disabled = false;
+        });
+    });
+  }
+
+  // --- Leaf subject form (/settings) ---
+
+  const leafSubjectForm = document.getElementById("leaf-subject-form");
+  const leafSubjectResult = document.getElementById("leaf-subject-result");
+
+  if (leafSubjectForm && leafSubjectResult) {
+    leafSubjectForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+
+      var btn = document.getElementById("leaf-subject-btn");
+      btn.setAttribute("aria-busy", "true");
+      btn.disabled = true;
+      leafSubjectResult.hidden = true;
+
+      var body = {
+        organization: document.getElementById("leaf-organization").value.trim(),
+        organizational_unit: document.getElementById("leaf-organizational-unit").value.trim(),
+        country: document.getElementById("leaf-country").value.trim(),
+        locality: document.getElementById("leaf-locality").value.trim(),
+        province: document.getElementById("leaf-province").value.trim(),
+      };
+
+      fetch("/api/leaf-subject", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+        .then(function (resp) { return resp.json().then(function (data) { return { ok: resp.ok, data: data }; }); })
+        .then(function (result) {
+          if (result.ok) {
+            leafSubjectResult.innerHTML = "<p><strong>Saved.</strong> Future certificates will use these subject defaults.</p>";
+            leafSubjectResult.setAttribute("class", "");
+            leafSubjectResult.hidden = false;
+          } else {
+            showError(leafSubjectResult, result.data.error || "Failed to save.");
+          }
+          btn.setAttribute("aria-busy", "false");
+          btn.disabled = false;
+        })
+        .catch(function (err) {
+          showError(leafSubjectResult, "Network error: " + err.message);
+          btn.setAttribute("aria-busy", "false");
+          btn.disabled = false;
         });
     });
   }

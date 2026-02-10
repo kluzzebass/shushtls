@@ -68,11 +68,32 @@ const (
 	ServiceCertValidity = LeafCertValidity
 )
 
-// Default subject fields for the root CA.
+// Default subject fields for the root CA and leaf certs.
 const (
-	DefaultCAOrganization = "ShushTLS"
-	DefaultCACommonName   = "ShushTLS Root CA"
+	DefaultCAOrganization   = "ShushTLS"
+	DefaultCACommonName     = "ShushTLS Root CA"
+	DefaultLeafOrganization = "ShushTLS"
 )
+
+// LeafSubjectParams holds optional subject fields for leaf certificates.
+// Zero values are replaced with defaults via WithDefaults(). Used for
+// O, OU, C, L, ST in the certificate subject; CN is always the primary SAN.
+type LeafSubjectParams struct {
+	Organization       string `json:"organization,omitempty"`
+	OrganizationalUnit string `json:"organizational_unit,omitempty"`
+	Country            string `json:"country,omitempty"`
+	Locality           string `json:"locality,omitempty"`
+	Province           string `json:"province,omitempty"`
+}
+
+// WithDefaults returns a copy with zero-value Organization set to DefaultLeafOrganization.
+// Other fields are left empty if not set (pkix.Name allows empty OU, C, L, ST).
+func (p LeafSubjectParams) WithDefaults() LeafSubjectParams {
+	if p.Organization == "" {
+		p.Organization = DefaultLeafOrganization
+	}
+	return p
+}
 
 // DefaultDomain is the default wildcard domain for leaf certificates.
 // .local is the conventional suffix for devices on a local network.

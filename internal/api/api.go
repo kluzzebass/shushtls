@@ -4,6 +4,7 @@
 package api
 
 import (
+	"archive/zip"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/json"
@@ -49,11 +50,14 @@ func NewHandler(engine *certengine.Engine, serviceHosts []string, logger *slog.L
 //   - POST /api/auth
 //   - GET  /api/status
 //   - GET  /api/certificates/{san}?type=key (private key downloads)
+//   - GET  /api/certificates/{san}?type=zip (cert+key bundle; auth when enabled)
+//   - GET  /api/leaf-subject (default O, OU, C, L, ST for leaf certs)
+//   - PUT  /api/leaf-subject (update default subject; body: LeafSubjectParams JSON)
 //
 // Unprotected endpoints (always open):
 //   - GET  /api/ca/root.pem
 //   - GET  /api/certificates (listing)
-//   - GET  /api/certificates/{san} (cert downloads, not keys)
+//   - GET  /api/certificates/{san} (cert downloads; use ?type=key or ?type=zip for key/bundle)
 //   - GET  /api/ca/install/*
 func (h *Handler) Register(mux *http.ServeMux) {
 	// Protected routes.
@@ -62,11 +66,13 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/certificates", h.requireAuth(h.handleIssueCert))
 	mux.HandleFunc("POST /api/service-cert", h.requireAuth(h.handleSetServiceCert))
 	mux.HandleFunc("POST /api/auth", h.requireAuth(h.handleAuth))
+	mux.HandleFunc("GET /api/leaf-subject", h.requireAuth(h.handleGetLeafSubject))
+	mux.HandleFunc("PUT /api/leaf-subject", h.requireAuth(h.handleSetLeafSubject))
 
 	// Unprotected routes — cert reads and install scripts.
 	mux.HandleFunc("GET /api/ca/root.pem", h.handleCACert)
 	mux.HandleFunc("GET /api/certificates", h.handleListCerts)
-	mux.HandleFunc("GET /api/certificates/", h.handleGetCert) // auth checked inside for ?type=key
+	mux.HandleFunc("GET /api/certificates/", h.handleGetCert) // auth checked inside for ?type=key and ?type=zip
 	mux.HandleFunc("GET /api/ca/install", h.handleInstallIndex)
 	mux.HandleFunc("GET /api/ca/install/macos", h.handleInstallMacOS)
 	mux.HandleFunc("GET /api/ca/install/linux", h.handleInstallLinux)
@@ -80,6 +86,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/status", methodNotAllowed("GET"))
 	mux.HandleFunc("/api/ca/root.pem", methodNotAllowed("GET"))
 	mux.HandleFunc("/api/auth", methodNotAllowed("POST"))
+	mux.HandleFunc("/api/leaf-subject", methodNotAllowed("GET, PUT"))
 }
 
 // requireAuth wraps a handler with Basic Auth checking. If the auth store
@@ -158,7 +165,8 @@ type InitializeResponse struct {
 
 // IssueCertRequest is the JSON body for POST /api/certificates.
 type IssueCertRequest struct {
-	DNSNames []string `json:"dns_names"`
+	DNSNames []string                   `json:"dns_names"`
+	Subject  *certengine.LeafSubjectParams `json:"subject,omitempty"` // optional override for this cert
 }
 
 // IssueCertResponse is the JSON body for POST /api/certificates.
@@ -324,7 +332,7 @@ func (h *Handler) handleIssueCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.engine.IssueCert(req.DNSNames)
+	item, err := h.engine.IssueCert(req.DNSNames, req.Subject)
 	if err != nil {
 		h.internalError(w, "certificate issuance failed", err)
 		return
@@ -341,7 +349,8 @@ func (h *Handler) handleIssueCert(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/certificates/{san}
-// Downloads the certificate and key as PEM for the given primary SAN.
+// Downloads the certificate (and optionally key) for the given primary SAN.
+// Query: type=cert (default), type=key (private key), or type=zip (cert+key bundle).
 // The {san} is the URL path after /api/certificates/.
 func (h *Handler) handleGetCert(w http.ResponseWriter, r *http.Request) {
 	// Extract the SAN from the URL path.
@@ -354,7 +363,7 @@ func (h *Handler) handleGetCert(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Determine what to return based on query parameter.
-	// ?type=key returns the private key, ?type=cert (default) returns the cert.
+	// ?type=cert (default), ?type=key (private key), or ?type=zip (cert+key bundle).
 	which := r.URL.Query().Get("type")
 	if which == "" {
 		which = "cert"
@@ -405,9 +414,56 @@ func (h *Handler) handleGetCert(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("attachment; filename=%q", certengine.SanitizeSAN(san)+".key.pem"))
 		w.Write(pemBlock)
 
+	case "zip":
+		// Zip bundle contains cert + key from the same GetCert result so the pair always matches.
+		if h.authStore != nil && h.authStore.IsEnabled() {
+			username, password, ok := r.BasicAuth()
+			if !ok || !h.authStore.Verify(username, password) {
+				w.Header().Set("WWW-Authenticate", `Basic realm="ShushTLS"`)
+				writeJSON(w, http.StatusUnauthorized, ErrorResponse{
+					Error: "authentication required for certificate bundle download",
+				})
+				return
+			}
+		}
+		certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
+		der, err := x509.MarshalECPrivateKey(leaf.Key)
+		if err != nil {
+			h.internalError(w, "failed to export private key for bundle", err)
+			return
+		}
+		keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})
+		base := certengine.SanitizeSAN(san)
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", base+".zip"))
+		zw := zip.NewWriter(w)
+		for _, entry := range []struct {
+			name string
+			data []byte
+		}{
+			{base + ".cert.pem", certPEM},
+			{base + ".key.pem", keyPEM},
+		} {
+			fw, err := zw.Create(entry.name)
+			if err != nil {
+				zw.Close()
+				h.internalError(w, "failed to create zip entry", err)
+				return
+			}
+			if _, err := fw.Write(entry.data); err != nil {
+				zw.Close()
+				h.internalError(w, "failed to write zip entry", err)
+				return
+			}
+		}
+		if err := zw.Close(); err != nil {
+			h.internalError(w, "failed to close zip", err)
+			return
+		}
+
 	default:
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{
-			Error: fmt.Sprintf("unknown type %q — use \"cert\" or \"key\"", which),
+			Error: fmt.Sprintf("unknown type %q — use \"cert\", \"key\", or \"zip\"", which),
 		})
 	}
 }
@@ -472,6 +528,35 @@ func (h *Handler) handleAuth(w http.ResponseWriter, r *http.Request) {
 			Message: "Authentication disabled.",
 		})
 	}
+}
+
+// GET /api/leaf-subject — return the default subject params for leaf certificates.
+func (h *Handler) handleGetLeafSubject(w http.ResponseWriter, r *http.Request) {
+	p := h.engine.DefaultLeafSubject()
+	writeJSON(w, http.StatusOK, p)
+}
+
+// PUT /api/leaf-subject — update the default subject params for leaf certificates.
+// Future issued certs and on-demand downloads use these O, OU, C, L, ST values; CN is always the primary SAN.
+func (h *Handler) handleSetLeafSubject(w http.ResponseWriter, r *http.Request) {
+	if h.engine.State() == certengine.Uninitialized {
+		writeJSON(w, http.StatusConflict, ErrorResponse{
+			Error: "ShushTLS must be initialized before setting leaf subject",
+		})
+		return
+	}
+	var p certengine.LeafSubjectParams
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{
+			Error: fmt.Sprintf("invalid request body: %v", err),
+		})
+		return
+	}
+	if err := h.engine.SetDefaultLeafSubject(p); err != nil {
+		h.internalError(w, "failed to save leaf subject", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.engine.DefaultLeafSubject())
 }
 
 // POST /api/service-cert — designate an existing certificate as the service cert.

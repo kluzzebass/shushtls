@@ -80,9 +80,13 @@
     <tr><td>POST</td><td><code>/api/certificates</code></td><td>yes</td><td>Issue a cert. Body: <code>{"dns_names": ["host.example.com"]}</code>. Idempotent.</td></tr>
     <tr><td>GET</td><td><code>/api/certificates/{primary_san}</code></td><td>no</td><td>Download certificate PEM.</td></tr>
     <tr><td>GET</td><td><code>/api/certificates/{primary_san}?type=key</code></td><td>yes</td><td>Download private key PEM.</td></tr>
+    <tr><td>GET</td><td><code>/api/certificates/{primary_san}?type=zip</code></td><td>yes</td><td>Download cert+key bundle (zip). Matching pair guaranteed.</td></tr>
     <tr><td>GET</td><td><code>/api/ca/root.pem</code></td><td>no</td><td>Download root CA (PEM).</td></tr>
+    <tr><td>GET</td><td><code>/api/leaf-subject</code></td><td>yes</td><td>Default subject (O, OU, C, L, ST) for leaf certs (JSON).</td></tr>
+    <tr><td>PUT</td><td><code>/api/leaf-subject</code></td><td>yes</td><td>Update default subject. Body: <code>{"organization": "My Org", ...}</code> (all optional).</td></tr>
   </tbody>
 </table>
+<p>Certificate subject defaults (O, OU, C, L, ST) can be set in <a href="/settings">Settings</a> or via <code>GET/PUT /api/leaf-subject</code>. CN is always the primary hostname.</p>
 <p><code>{primary_san}</code> is the first DNS name (e.g. <code>nas.home.arpa</code> or <code>*.home.arpa</code>). For wildcards use <code>%2A</code> in the URL. Use <code>not_after</code> from the list to plan re-issuance.</p>
 
 <h3>Example: issue and download</h3>
@@ -94,9 +98,10 @@ curl -sS -X POST "$BASE/api/certificates" \
   -H "Content-Type: application/json" \
   -d '{"dns_names": ["'"$SAN"'"]}'
 
-# Download cert and key
+# Download cert and key (or zip bundle for a matching pair)
 curl -sS -o cert.pem "$BASE/api/certificates/$SAN"
-curl -sS -o key.pem -u user:pass "$BASE/api/certificates/$SAN?type=key"</code></pre>
+curl -sS -o key.pem -u user:pass "$BASE/api/certificates/$SAN?type=key"
+# Or one request for both (matching pair): curl -sS -o bundle.zip -u user:pass "$BASE/api/certificates/$SAN?type=zip"</code></pre>
 <p>Errors are JSON: <code>{"error": "message"}</code>. 400 = bad request, 409 = not initialized, 401 = auth required.</p>
 </section>
 

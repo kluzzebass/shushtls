@@ -1,6 +1,8 @@
 package api
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"encoding/pem"
 	"io"
@@ -98,7 +100,7 @@ func TestStatus_Ready(t *testing.T) {
 	mux := serveMux(h)
 
 	// Also issue a wildcard.
-	if _, err := engine.IssueCert([]string{"*.home.arpa"}); err != nil {
+	if _, err := engine.IssueCert([]string{"*.home.arpa"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
@@ -413,7 +415,7 @@ func TestListCerts_AfterIssuance(t *testing.T) {
 	mux := serveMux(h)
 
 	// Issue an additional cert.
-	if _, err := engine.IssueCert([]string{"nas.home.arpa"}); err != nil {
+	if _, err := engine.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
@@ -449,7 +451,7 @@ func TestGetCert_DownloadCert(t *testing.T) {
 	h, engine := newInitializedHandler(t)
 	mux := serveMux(h)
 
-	if _, err := engine.IssueCert([]string{"nas.home.arpa"}); err != nil {
+	if _, err := engine.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
@@ -473,7 +475,7 @@ func TestGetCert_DownloadKey(t *testing.T) {
 	h, engine := newInitializedHandler(t)
 	mux := serveMux(h)
 
-	if _, err := engine.IssueCert([]string{"nas.home.arpa"}); err != nil {
+	if _, err := engine.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
@@ -488,11 +490,66 @@ func TestGetCert_DownloadKey(t *testing.T) {
 	}
 }
 
+func TestGetCert_DownloadZip(t *testing.T) {
+	h, engine := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	if _, err := engine.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+
+	w := doRequest(t, mux, "GET", "/api/certificates/nas.home.arpa?type=zip", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if ct != "application/zip" {
+		t.Errorf("Content-Type = %q, want application/zip", ct)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len()))
+	if err != nil {
+		t.Fatalf("zip.NewReader: %v", err)
+	}
+	if len(zr.File) != 2 {
+		t.Fatalf("zip has %d files, want 2", len(zr.File))
+	}
+	names := make(map[string]bool)
+	for _, f := range zr.File {
+		names[f.Name] = true
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatalf("open zip entry %q: %v", f.Name, err)
+		}
+		var buf bytes.Buffer
+		if _, err := io.Copy(&buf, rc); err != nil {
+			rc.Close()
+			t.Fatalf("read zip entry %q: %v", f.Name, err)
+		}
+		rc.Close()
+		block, _ := pem.Decode(buf.Bytes())
+		if block == nil {
+			t.Fatalf("zip entry %q is not valid PEM", f.Name)
+		}
+		if strings.HasSuffix(f.Name, ".cert.pem") && block.Type != "CERTIFICATE" {
+			t.Fatalf("zip entry %q: PEM type = %q, want CERTIFICATE", f.Name, block.Type)
+		}
+		if strings.HasSuffix(f.Name, ".key.pem") && block.Type != "EC PRIVATE KEY" {
+			t.Fatalf("zip entry %q: PEM type = %q, want EC PRIVATE KEY", f.Name, block.Type)
+		}
+	}
+	base := certengine.SanitizeSAN("nas.home.arpa")
+	if !names[base+".cert.pem"] || !names[base+".key.pem"] {
+		t.Errorf("zip entries = %v, want %q and %q", names, base+".cert.pem", base+".key.pem")
+	}
+}
+
 func TestGetCert_InvalidType(t *testing.T) {
 	h, engine := newInitializedHandler(t)
 	mux := serveMux(h)
 
-	if _, err := engine.IssueCert([]string{"nas.home.arpa"}); err != nil {
+	if _, err := engine.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
@@ -509,6 +566,65 @@ func TestGetCert_EmptySAN(t *testing.T) {
 	w := doRequest(t, mux, "GET", "/api/certificates/", "")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+// --- GET/PUT /api/leaf-subject ---
+
+func TestLeafSubject_GetDefault(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "GET", "/api/leaf-subject", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	var p certengine.LeafSubjectParams
+	if err := json.Unmarshal(w.Body.Bytes(), &p); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if p.Organization == "" {
+		t.Error("expected default organization to be set")
+	}
+}
+
+func TestLeafSubject_SetAndGet(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	body := `{"organization": "My Org", "organizational_unit": "Dev", "country": "US", "locality": "NYC", "province": "NY"}`
+	w := doRequest(t, mux, "PUT", "/api/leaf-subject", body)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+	var putResp certengine.LeafSubjectParams
+	if err := json.Unmarshal(w.Body.Bytes(), &putResp); err != nil {
+		t.Fatalf("decode PUT response: %v", err)
+	}
+	if putResp.Organization != "My Org" || putResp.OrganizationalUnit != "Dev" {
+		t.Errorf("PUT response = %+v", putResp)
+	}
+
+	w = doRequest(t, mux, "GET", "/api/leaf-subject", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200", w.Code)
+	}
+	var getResp certengine.LeafSubjectParams
+	if err := json.Unmarshal(w.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("decode GET response: %v", err)
+	}
+	if getResp.Organization != "My Org" || getResp.OrganizationalUnit != "Dev" || getResp.Country != "US" || getResp.Locality != "NYC" || getResp.Province != "NY" {
+		t.Errorf("GET response = %+v", getResp)
+	}
+}
+
+func TestLeafSubject_PutUninitialized(t *testing.T) {
+	h, _ := newTestHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "PUT", "/api/leaf-subject", `{"organization": "X"}`)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", w.Code)
 	}
 }
 
@@ -804,7 +920,7 @@ func TestAuth_UnprotectedEndpoints(t *testing.T) {
 	mux := serveMux(h)
 
 	// Issue a cert so we have something to list/download.
-	if _, err := engine.IssueCert([]string{"nas.local"}); err != nil {
+	if _, err := engine.IssueCert([]string{"nas.local"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
@@ -838,7 +954,7 @@ func TestAuth_KeyDownloadProtected(t *testing.T) {
 	h, engine, _ := newInitializedAuthHandler(t)
 	mux := serveMux(h)
 
-	if _, err := engine.IssueCert([]string{"nas.local"}); err != nil {
+	if _, err := engine.IssueCert([]string{"nas.local"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
@@ -856,6 +972,18 @@ func TestAuth_KeyDownloadProtected(t *testing.T) {
 	w = doAuthRequest(t, mux, "GET", "/api/certificates/nas.local?type=key", "", "admin", "s3cret")
 	if w.Code != http.StatusOK {
 		t.Errorf("authed key download: got %d, want 200", w.Code)
+	}
+
+	// Zip bundle without creds should 401 (contains key).
+	w = doRequest(t, mux, "GET", "/api/certificates/nas.local?type=zip", "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("unauthed zip download: got %d, want 401", w.Code)
+	}
+
+	// Zip bundle with creds should work.
+	w = doAuthRequest(t, mux, "GET", "/api/certificates/nas.local?type=zip", "", "admin", "s3cret")
+	if w.Code != http.StatusOK {
+		t.Errorf("authed zip download: got %d, want 200", w.Code)
 	}
 }
 
@@ -965,7 +1093,7 @@ func TestSetServiceCert_Success(t *testing.T) {
 	mux := serveMux(h)
 
 	// Issue another cert.
-	if _, err := engine.IssueCert([]string{"mybox.local"}); err != nil {
+	if _, err := engine.IssueCert([]string{"mybox.local"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
@@ -1009,7 +1137,7 @@ func TestSetServiceCert_Protected(t *testing.T) {
 	mux := serveMux(h)
 
 	// Issue a cert to designate.
-	if _, err := engine.IssueCert([]string{"mybox.local"}); err != nil {
+	if _, err := engine.IssueCert([]string{"mybox.local"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 

@@ -3,6 +3,7 @@ package certengine
 import (
 	"crypto/ecdsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"os"
@@ -35,9 +36,10 @@ const (
 	caKeyFile  = "ca-key.pem"
 	caCertFile = "ca-cert.pem"
 
-	leafKeyFile   = "key.pem"
-	leafCertFile  = "cert.pem"
-	leafDNSNames  = "dns_names" // SAN config only (cert generated on download)
+	leafKeyFile      = "key.pem"
+	leafCertFile     = "cert.pem"
+	leafDNSNames     = "dns_names"     // SAN config only (cert generated on download)
+	leafSubjectOverrideFile = "leaf_subject.json" // optional subject override per SAN
 
 	dirPerms     = 0700
 	keyFilePerms = 0600
@@ -236,6 +238,36 @@ func (s *Store) LoadSANConfig(primarySAN string) ([]string, error) {
 	return names, nil
 }
 
+// SaveLeafSubjectForSAN persists optional subject params for a primary SAN.
+// Used when issuing with a subject override; GetCert uses this when generating on-demand.
+func (s *Store) SaveLeafSubjectForSAN(primarySAN string, p LeafSubjectParams) error {
+	dir := s.certDir(primarySAN)
+	if err := os.MkdirAll(dir, dirPerms); err != nil {
+		return fmt.Errorf("create cert directory for %s: %w", primarySAN, err)
+	}
+	data, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal leaf subject: %w", err)
+	}
+	path := filepath.Join(dir, leafSubjectOverrideFile)
+	return writeFileAtomic(path, data, certPerms)
+}
+
+// LoadLeafSubjectForSAN loads optional subject params for a primary SAN.
+// Returns (params, true) if a file exists, (zero, false) otherwise.
+func (s *Store) LoadLeafSubjectForSAN(primarySAN string) (LeafSubjectParams, bool) {
+	path := filepath.Join(s.certDir(primarySAN), leafSubjectOverrideFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return LeafSubjectParams{}, false
+	}
+	var p LeafSubjectParams
+	if err := json.Unmarshal(data, &p); err != nil {
+		return LeafSubjectParams{}, false
+	}
+	return p.WithDefaults(), true
+}
+
 // LoadAllSANConfigs returns all primary SANs that have a SAN config (dns_names)
 // on disk. Used to list registered SANs for on-demand issuance.
 func (s *Store) LoadAllSANConfigs() (map[string][]string, error) {
@@ -289,6 +321,35 @@ func (s *Store) LoadServiceHost() string {
 		return ""
 	}
 	return strings.TrimSpace(string(data))
+}
+
+// --- Leaf subject defaults ---
+
+const leafSubjectFile = "leaf-subject.json"
+
+// SaveLeafSubjectParams writes the default leaf certificate subject params to disk.
+func (s *Store) SaveLeafSubjectParams(p LeafSubjectParams) error {
+	data, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal leaf subject: %w", err)
+	}
+	path := filepath.Join(s.dir, leafSubjectFile)
+	return writeFileAtomic(path, data, certPerms)
+}
+
+// LoadLeafSubjectParams reads the default leaf subject params from disk.
+// Returns params with WithDefaults() applied if the file does not exist.
+func (s *Store) LoadLeafSubjectParams() LeafSubjectParams {
+	path := filepath.Join(s.dir, leafSubjectFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return LeafSubjectParams{}.WithDefaults()
+	}
+	var p LeafSubjectParams
+	if err := json.Unmarshal(data, &p); err != nil {
+		return LeafSubjectParams{}.WithDefaults()
+	}
+	return p.WithDefaults()
 }
 
 // --- SAN sanitization ---

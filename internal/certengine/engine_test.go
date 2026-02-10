@@ -319,7 +319,7 @@ func TestEngine_IssueCertBeforeInitialize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	_, err = e.IssueCert([]string{"nas.home.arpa"})
+	_, err = e.IssueCert([]string{"nas.home.arpa"}, nil)
 	if err == nil {
 		t.Fatal("expected error when issuing cert before Initialize")
 	}
@@ -327,7 +327,7 @@ func TestEngine_IssueCertBeforeInitialize(t *testing.T) {
 
 func TestEngine_IssueCertEmptyNames(t *testing.T) {
 	e := initEngine(t)
-	_, err := e.IssueCert(nil)
+	_, err := e.IssueCert(nil, nil)
 	if err == nil {
 		t.Fatal("expected error with empty dnsNames")
 	}
@@ -336,7 +336,7 @@ func TestEngine_IssueCertEmptyNames(t *testing.T) {
 func TestEngine_IssueFQDNCert(t *testing.T) {
 	e := initEngine(t)
 
-	item, err := e.IssueCert([]string{"nas.home.arpa"})
+	item, err := e.IssueCert([]string{"nas.home.arpa"}, nil)
 	if err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestEngine_IssueFQDNCert(t *testing.T) {
 func TestEngine_IssueWildcardCert(t *testing.T) {
 	e := initEngine(t)
 
-	item, err := e.IssueCert([]string{"*.home.arpa"})
+	item, err := e.IssueCert([]string{"*.home.arpa"}, nil)
 	if err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
@@ -401,7 +401,7 @@ func TestEngine_IssueMultipleCerts(t *testing.T) {
 	}
 
 	for _, n := range names {
-		if _, err := e.IssueCert(n); err != nil {
+		if _, err := e.IssueCert(n, nil); err != nil {
 			t.Fatalf("IssueCert(%v): %v", n, err)
 		}
 	}
@@ -423,11 +423,11 @@ func TestEngine_IssueMultipleCerts(t *testing.T) {
 func TestEngine_IssueCertIsIdempotentPerSAN(t *testing.T) {
 	e := initEngine(t)
 
-	item1, err := e.IssueCert([]string{"nas.home.arpa"})
+	item1, err := e.IssueCert([]string{"nas.home.arpa"}, nil)
 	if err != nil {
 		t.Fatalf("first IssueCert: %v", err)
 	}
-	item2, err := e.IssueCert([]string{"nas.home.arpa"})
+	item2, err := e.IssueCert([]string{"nas.home.arpa"}, nil)
 	if err != nil {
 		t.Fatalf("second IssueCert: %v", err)
 	}
@@ -436,7 +436,7 @@ func TestEngine_IssueCertIsIdempotentPerSAN(t *testing.T) {
 	}
 
 	// Different SAN should produce a different list entry.
-	item3, err := e.IssueCert([]string{"pihole.home.arpa"})
+	item3, err := e.IssueCert([]string{"pihole.home.arpa"}, nil)
 	if err != nil {
 		t.Fatalf("IssueCert (different SAN): %v", err)
 	}
@@ -457,10 +457,10 @@ func TestEngine_ReloadFromDisk(t *testing.T) {
 	if _, err := e1.Initialize([]string{"shushtls.home.arpa"}, CAParams{}); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	if _, err := e1.IssueCert([]string{"*.home.arpa"}); err != nil {
+	if _, err := e1.IssueCert([]string{"*.home.arpa"}, nil); err != nil {
 		t.Fatalf("IssueCert wildcard: %v", err)
 	}
-	if _, err := e1.IssueCert([]string{"nas.home.arpa"}); err != nil {
+	if _, err := e1.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
 		t.Fatalf("IssueCert FQDN: %v", err)
 	}
 
@@ -579,7 +579,7 @@ func TestCA_ValidityPeriod(t *testing.T) {
 func TestLeafCert_SignedByCA(t *testing.T) {
 	e := initEngine(t)
 
-	if _, err := e.IssueCert([]string{"nas.home.arpa"}); err != nil {
+	if _, err := e.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 	leaf := e.GetCert("nas.home.arpa")
@@ -596,7 +596,7 @@ func TestLeafCert_SignedByCA(t *testing.T) {
 
 func TestLeafCert_NotCA(t *testing.T) {
 	e := initEngine(t)
-	if _, err := e.IssueCert([]string{"nas.home.arpa"}); err != nil {
+	if _, err := e.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 	leaf := e.GetCert("nas.home.arpa")
@@ -611,7 +611,7 @@ func TestLeafCert_NotCA(t *testing.T) {
 func TestLeafCert_SANsMatchRequested(t *testing.T) {
 	e := initEngine(t)
 
-	if _, err := e.IssueCert([]string{"nas.home.arpa", "backup.home.arpa"}); err != nil {
+	if _, err := e.IssueCert([]string{"nas.home.arpa", "backup.home.arpa"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 	leaf := e.GetCert("nas.home.arpa")
@@ -632,7 +632,7 @@ func TestLeafCert_SANsMatchRequested(t *testing.T) {
 
 func TestLeafCert_KeyUsages(t *testing.T) {
 	e := initEngine(t)
-	if _, err := e.IssueCert([]string{"nas.home.arpa"}); err != nil {
+	if _, err := e.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 	leaf := e.GetCert("nas.home.arpa")
@@ -650,7 +650,7 @@ func TestLeafCert_KeyUsages(t *testing.T) {
 
 func TestLeafCert_ExtKeyUsage(t *testing.T) {
 	e := initEngine(t)
-	if _, err := e.IssueCert([]string{"nas.home.arpa"}); err != nil {
+	if _, err := e.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 	leaf := e.GetCert("nas.home.arpa")
@@ -672,7 +672,7 @@ func TestLeafCert_ExtKeyUsage(t *testing.T) {
 
 func TestLeafCert_ValidityPeriod(t *testing.T) {
 	e := initEngine(t)
-	if _, err := e.IssueCert([]string{"nas.home.arpa"}); err != nil {
+	if _, err := e.IssueCert([]string{"nas.home.arpa"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 	leaf := e.GetCert("nas.home.arpa")
@@ -709,7 +709,7 @@ func TestDesignateServiceCert_Success(t *testing.T) {
 	e := initEngine(t)
 
 	// Issue another cert.
-	if _, err := e.IssueCert([]string{"mybox.local", "localhost"}); err != nil {
+	if _, err := e.IssueCert([]string{"mybox.local", "localhost"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
@@ -760,7 +760,7 @@ func TestDesignateServiceCert_Persists(t *testing.T) {
 	e := initEngine(t)
 
 	// Issue and designate.
-	if _, err := e.IssueCert([]string{"mybox.local"}); err != nil {
+	if _, err := e.IssueCert([]string{"mybox.local"}, nil); err != nil {
 		t.Fatalf("IssueCert: %v", err)
 	}
 	if err := e.DesignateServiceCert("mybox.local"); err != nil {
@@ -788,6 +788,40 @@ func TestIssueCertificate_EmptyNames(t *testing.T) {
 	_, err := IssueCertificate(e.CA(), nil)
 	if err == nil {
 		t.Fatal("expected error when issuing cert with no names")
+	}
+}
+
+func TestLeafCert_SubjectParams(t *testing.T) {
+	e := initEngine(t)
+	subject := LeafSubjectParams{
+		Organization:       "Acme Labs",
+		OrganizationalUnit: "IT",
+		Country:            "US",
+		Locality:           "Boston",
+		Province:           "MA",
+	}
+	leaf, err := IssueCertificateWithValidityAndSubject(e.CA(), []string{"host.example.com"}, LeafCertValidity, subject)
+	if err != nil {
+		t.Fatalf("IssueCertificateWithValidityAndSubject: %v", err)
+	}
+	cert := leaf.Cert
+	if cert.Subject.CommonName != "host.example.com" {
+		t.Errorf("CN = %q, want host.example.com", cert.Subject.CommonName)
+	}
+	if len(cert.Subject.Organization) == 0 || cert.Subject.Organization[0] != "Acme Labs" {
+		t.Errorf("O = %v, want [Acme Labs]", cert.Subject.Organization)
+	}
+	if len(cert.Subject.OrganizationalUnit) == 0 || cert.Subject.OrganizationalUnit[0] != "IT" {
+		t.Errorf("OU = %v, want [IT]", cert.Subject.OrganizationalUnit)
+	}
+	if len(cert.Subject.Country) == 0 || cert.Subject.Country[0] != "US" {
+		t.Errorf("C = %v, want [US]", cert.Subject.Country)
+	}
+	if len(cert.Subject.Locality) == 0 || cert.Subject.Locality[0] != "Boston" {
+		t.Errorf("L = %v, want [Boston]", cert.Subject.Locality)
+	}
+	if len(cert.Subject.Province) == 0 || cert.Subject.Province[0] != "MA" {
+		t.Errorf("ST = %v, want [MA]", cert.Subject.Province)
 	}
 }
 
@@ -1060,13 +1094,13 @@ func TestLeafCert_PrimarySAN(t *testing.T) {
 	e := initEngine(t)
 
 	// FQDN cert
-	fqdn, _ := e.IssueCert([]string{"nas.home.arpa", "backup.home.arpa"})
+	fqdn, _ := e.IssueCert([]string{"nas.home.arpa", "backup.home.arpa"}, nil)
 	if fqdn.PrimarySAN != "nas.home.arpa" {
 		t.Errorf("FQDN PrimarySAN = %q, want %q", fqdn.PrimarySAN, "nas.home.arpa")
 	}
 
 	// Wildcard cert
-	wild, _ := e.IssueCert([]string{"*.home.arpa"})
+	wild, _ := e.IssueCert([]string{"*.home.arpa"}, nil)
 	if wild.PrimarySAN != "*.home.arpa" {
 		t.Errorf("wildcard PrimarySAN = %q, want %q", wild.PrimarySAN, "*.home.arpa")
 	}
