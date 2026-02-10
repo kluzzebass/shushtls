@@ -1,25 +1,32 @@
 // Package auth provides optional HTTP Basic Auth for the ShushTLS API.
-// Credentials are stored in a JSON file with bcrypt-hashed passwords.
+// Credentials are stored in a JSON file with argon2id-hashed passwords.
 // Auth is off by default and can be enabled/disabled via the API.
 package auth
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
-	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/crypto/argon2"
 )
 
 const (
 	// authFile is the name of the credentials file inside the state directory.
 	authFile = "auth.json"
 
-	// bcryptCost controls the bcrypt hashing cost. 12 is a reasonable
-	// balance between security and performance for a LAN service.
-	bcryptCost = 12
+	// Argon2id parameters (OWASP recommended).
+	argonMemory      = 64 * 1024 // 64 MB
+	argonIterations  = 3
+	argonParallelism = 4
+	argonSaltLen     = 16
+	argonKeyLen      = 32
 )
 
 // Credentials holds the stored authentication state.
@@ -30,7 +37,8 @@ type Credentials struct {
 	// Username is the HTTP Basic Auth username.
 	Username string `json:"username"`
 
-	// PasswordHash is the bcrypt hash of the password.
+	// PasswordHash is the argon2id hash in PHC string format:
+	// $argon2id$v=19$m=65536,t=3,p=4$<salt>$<hash>
 	PasswordHash string `json:"password_hash"`
 }
 
@@ -74,13 +82,12 @@ func (s *Store) Verify(username, password string) bool {
 		return false
 	}
 
-	err := bcrypt.CompareHashAndPassword([]byte(s.creds.PasswordHash), []byte(password))
-	return err == nil
+	return verifyArgon2id(s.creds.PasswordHash, password)
 }
 
 // Enable sets or updates the authentication credentials and persists them.
 func (s *Store) Enable(username, password string) error {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
+	hash, err := hashArgon2id(password)
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}
@@ -91,7 +98,7 @@ func (s *Store) Enable(username, password string) error {
 	s.creds = &Credentials{
 		Enabled:      true,
 		Username:     username,
-		PasswordHash: string(hash),
+		PasswordHash: hash,
 	}
 
 	return s.save()
@@ -149,4 +156,55 @@ func (s *Store) save() error {
 	}
 
 	return os.WriteFile(s.path(), data, 0o600)
+}
+
+// --- Argon2id password hashing ---
+
+// hashArgon2id produces a PHC-format string:
+// $argon2id$v=19$m=65536,t=3,p=4$<base64-salt>$<base64-hash>
+func hashArgon2id(password string) (string, error) {
+	salt := make([]byte, argonSaltLen)
+	if _, err := rand.Read(salt); err != nil {
+		return "", fmt.Errorf("generate salt: %w", err)
+	}
+
+	hash := argon2.IDKey([]byte(password), salt, argonIterations, argonMemory, argonParallelism, argonKeyLen)
+
+	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s",
+		argon2.Version,
+		argonMemory, argonIterations, argonParallelism,
+		base64.RawStdEncoding.EncodeToString(salt),
+		base64.RawStdEncoding.EncodeToString(hash),
+	), nil
+}
+
+// verifyArgon2id parses a PHC-format hash and compares it against a password.
+func verifyArgon2id(encoded, password string) bool {
+	parts := strings.Split(encoded, "$")
+	// Expected: ["", "argon2id", "v=19", "m=...,t=...,p=...", salt, hash]
+	if len(parts) != 6 || parts[1] != "argon2id" {
+		return false
+	}
+
+	var memory uint32
+	var iterations uint32
+	var parallelism uint8
+	_, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &iterations, &parallelism)
+	if err != nil {
+		return false
+	}
+
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil {
+		return false
+	}
+
+	expectedHash, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil {
+		return false
+	}
+
+	hash := argon2.IDKey([]byte(password), salt, iterations, memory, parallelism, uint32(len(expectedHash)))
+
+	return subtle.ConstantTimeCompare(hash, expectedHash) == 1
 }
