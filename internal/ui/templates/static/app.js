@@ -278,7 +278,7 @@
     function setTheme(theme) {
       document.documentElement.setAttribute("data-theme", theme);
       try { localStorage.setItem("pico-theme", theme); } catch (e) {}
-      themeToggle.textContent = theme === "light" ? "Dark" : "Light";
+      themeToggle.textContent = theme === "dark" ? "\u2600" : "\u263E";
       themeToggle.setAttribute("aria-label", theme === "light" ? "Switch to dark theme" : "Switch to light theme");
     }
     setTheme(currentTheme());
