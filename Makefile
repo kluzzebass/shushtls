@@ -1,12 +1,12 @@
 .PHONY: build test clean
 
-# Build the ShushTLS binary using vendored dependencies.
+# Build the ShushTLS binary.
 build:
-	go build -mod=vendor -o shushtls .
+	go build -o shushtls .
 
 # Run all tests.
 test:
-	go test -mod=vendor -count=1 -timeout 60s ./...
+	go test -count=1 -timeout 60s ./...
 
 # Remove build artifacts.
 clean:
