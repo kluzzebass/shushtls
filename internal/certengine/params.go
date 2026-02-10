@@ -19,8 +19,7 @@ const (
 	ECDSACurve = "P-256"
 )
 
-// Validity periods. These are intentionally long — ShushTLS is designed to
-// be set up once and forgotten for years.
+// Validity periods.
 const (
 	// DefaultCAValidityYears is the default validity for the root CA in years.
 	// 25 years. The root CA is the anchor of trust; if it expires,
@@ -31,10 +30,11 @@ const (
 	// Derived from DefaultCAValidityYears for backward compatibility.
 	RootCAValidity = time.Duration(DefaultCAValidityYears) * 365 * 24 * time.Hour // ~25 years
 
-	// LeafCertValidity is how long wildcard leaf certificates are valid.
-	// 10 years. Shorter than the root CA, but still long enough that
-	// you shouldn't have to think about it for a decade.
-	LeafCertValidity = 10 * 365 * 24 * time.Hour // ~10 years
+	// LeafCertValidity is how long leaf certificates are valid.
+	// 825 days — the maximum allowed by Apple platforms (macOS / iOS)
+	// for TLS server certificates, including those from private CAs.
+	// See: https://support.apple.com/en-us/HT210176
+	LeafCertValidity = 825 * 24 * time.Hour // 825 days
 
 	// ServiceCertValidity is how long the ShushTLS service's own leaf
 	// certificate is valid. Same as other leaf certs.
@@ -91,9 +91,10 @@ const RootCAKeyUsages = x509.KeyUsageCertSign | x509.KeyUsageCRLSign
 
 // LeafKeyUsages defines the X.509 key usage flags for leaf certificates.
 // DigitalSignature: required for ECDSA-based TLS handshakes.
-// KeyEncipherment: included for compatibility with RSA key exchange
-// (not strictly needed for ECDSA, but harmless and expected by some clients).
-const LeafKeyUsages = x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment
+// KeyEncipherment is intentionally omitted — it is only valid for RSA keys
+// and including it on an ECDSA cert violates RFC 5480, causing macOS to
+// flag the certificate as "not standards compliant".
+const LeafKeyUsages = x509.KeyUsageDigitalSignature
 
 // LeafExtKeyUsages defines the extended key usage for leaf certificates.
 // ServerAuth only — these certs are for TLS servers, not clients.

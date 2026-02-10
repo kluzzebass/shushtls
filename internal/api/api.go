@@ -521,7 +521,7 @@ func (h *Handler) handleInstallMacOS(w http.ResponseWriter, r *http.Request) {
 # Usage: curl -kfsSL %[1]s/api/ca/install/macos | bash
 set -euo pipefail
 
-TMPFILE=$(mktemp /tmp/shushtls-root-ca.XXXXXX.pem)
+TMPFILE=$(mktemp /tmp/shushtls-root-ca.XXXXXX)
 trap 'rm -f "$TMPFILE"' EXIT
 
 echo "Downloading ShushTLS root CA..."

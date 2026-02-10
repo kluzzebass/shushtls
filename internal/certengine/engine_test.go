@@ -619,8 +619,8 @@ func TestLeafCert_KeyUsages(t *testing.T) {
 	if leaf.Cert.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
 		t.Error("leaf cert missing DigitalSignature key usage")
 	}
-	if leaf.Cert.KeyUsage&x509.KeyUsageKeyEncipherment == 0 {
-		t.Error("leaf cert missing KeyEncipherment key usage")
+	if leaf.Cert.KeyUsage&x509.KeyUsageKeyEncipherment != 0 {
+		t.Error("leaf cert should NOT have KeyEncipherment (invalid for ECDSA)")
 	}
 }
 

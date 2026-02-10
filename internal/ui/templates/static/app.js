@@ -100,13 +100,8 @@
         const data = await resp.json();
 
         if (resp.ok) {
-          issueResult.innerHTML =
-            "<p><strong>Certificate issued!</strong> " +
-            "Primary SAN: <code>" + escapeHtml(data.certificate.primary_san) + "</code></p>" +
-            "<p>Reload the page to see it in the table.</p>";
-          issueResult.setAttribute("class", "");
-          issueResult.hidden = false;
-          document.getElementById("dns_names").value = "";
+          window.location.reload();
+          return;
         } else {
           showError(issueResult, data.error || "Certificate issuance failed.");
         }

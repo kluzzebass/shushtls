@@ -4,8 +4,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"fmt"
 	"strings"
 	"time"
@@ -55,6 +57,24 @@ func IssueCertificate(ca *CACert, dnsNames []string) (*LeafCert, error) {
 		return nil, fmt.Errorf("generate leaf serial: %w", err)
 	}
 
+	// Compute SubjectKeyIdentifier per RFC 5280 §4.2.1.2 — SHA-256 hash of
+	// the DER-encoded public key bit string. Go only auto-generates this for
+	// CA certs, so we must set it explicitly for leaves.
+	pubDER, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("marshal leaf public key: %w", err)
+	}
+	// The PKIX structure wraps the key in a BIT STRING inside a SEQUENCE.
+	// We hash the raw BIT STRING value (the actual key bytes).
+	var spki struct {
+		Algorithm asn1.RawValue
+		PublicKey asn1.BitString
+	}
+	if _, err := asn1.Unmarshal(pubDER, &spki); err != nil {
+		return nil, fmt.Errorf("unmarshal SPKI: %w", err)
+	}
+	ski := sha256.Sum256(spki.PublicKey.Bytes)
+
 	now := time.Now()
 	template := &x509.Certificate{
 		SerialNumber: serial,
@@ -69,6 +89,7 @@ func IssueCertificate(ca *CACert, dnsNames []string) (*LeafCert, error) {
 		ExtKeyUsage:           LeafExtKeyUsages,
 		BasicConstraintsValid: true,
 		IsCA:                  false,
+		SubjectKeyId:          ski[:],
 	}
 
 	// Signed by the CA.
