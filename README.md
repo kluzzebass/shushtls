@@ -25,6 +25,15 @@ shushtls
 
 Open the URL shown in the log (e.g. `http://localhost:8080`). Click through setup to initialize. Then install the root CA on each device that will use your certs (macOS, Linux, Windows install scripts are in the web UI under Install CA). After that, the server is available over HTTPS and HTTP redirects to it.
 
+## Bootstrap flow
+
+1. **First start.** Server starts in HTTP-only mode. Logs show the URL (e.g. `http://localhost:8080`).
+2. **Initialize.** Open that URL, complete setup. ShushTLS generates the root CA and its own service certificate (for the ShushTLS UI/API over HTTPS).
+3. **HTTPS active.** As soon as initialization completes, the server enables HTTPS and redirects HTTP to it. No restart. Until you install the root CA on a device, that device will show an untrusted certificate warning when you open the UI over HTTPS—accept or bypass the warning to continue (you need the UI to get the install script).
+4. **Install trust.** On each device (Mac, Linux, Windows, etc.), run the install script or download the root PEM and add it to the system/browser trust store. The UI links to platform-specific one-liners. After that, the browser will trust ShushTLS and your issued certs on that device.
+
+If you start with an empty state directory, you always get step 1 → 2 → 3 → 4. If you start with an existing state dir (already initialized), the server goes straight to HTTPS and redirect.
+
 ### Web UI
 
 **Setup** — One-time initialization (root CA + service cert).
@@ -67,16 +76,7 @@ Maximum TLS certificate lifetime is set by the **CA/Browser Forum ballot SC-081*
 | 2027-03-15 | 100 days |
 | 2029-03-15 | 47 days |
 
-The code may be updated over time to use the shorter validity as the dates take effect. Plan to re-issue leaf certs before they expire; the web UI shows validity dates for all certs.
-
-## Bootstrap flow
-
-1. **First start.** Server starts in HTTP-only mode. Logs show the URL (e.g. `http://localhost:8080`).
-2. **Initialize.** Open that URL, complete setup. ShushTLS generates the root CA and its own service certificate (for the ShushTLS UI/API over HTTPS).
-3. **HTTPS active.** As soon as initialization completes, the server enables HTTPS and redirects HTTP to it. No restart. Until you install the root CA on a device, that device will show an untrusted certificate warning when you open the UI over HTTPS—accept or bypass the warning to continue (you need the UI to get the install script).
-4. **Install trust.** On each device (Mac, Linux, Windows, etc.), run the install script or download the root PEM and add it to the system/browser trust store. The UI links to platform-specific one-liners. After that, the browser will trust ShushTLS and your issued certs on that device.
-
-If you start with an empty state directory, you always get step 1 → 2 → 3 → 4. If you start with an existing state dir (already initialized), the server goes straight to HTTPS and redirect.
+Plan to re-issue leaf certs before they expire; the web UI shows validity dates for all certs.
 
 ## Non-goals and tradeoffs
 
@@ -86,7 +86,7 @@ ShushTLS intentionally does **not** do the following. These are conscious limits
 - **No short-lived certs / automatic rotation.** Certificates are issued with validity that meets current browser rules (see [Certificate longevity](#certificate-longevity-leaf-certs)). There is no built-in ACME, no auto-renewal. You re-issue when needed.
 - **No revocation.** There is no CRL or OCSP. If you need to revoke a cert, stop using it and (if necessary) re-issue a new one for that name. For a home/lab CA this is usually acceptable.
 - **No auth by default.** The UI and API are open on the LAN. Optional HTTP Basic Auth can be enabled in the web UI (Settings). ShushTLS does not implement OAuth, SSO, or fine-grained roles.
-- **No HA / clustering.** One instance, one state directory. A lock file prevents running two instances against the same state. For multi-node or replicated setups you’d need something else.
+- **No HA / clustering.** One instance, one state directory. Running a second instance against the same state dir will conflict (e.g. port already in use). For multi-node or replicated setups you’d need something else.
 - **No compliance or audit features.** No certificate transparency, no detailed audit log, no FIPS mode. It’s a small tool for people who want a private CA without ceremony.
 
 ## API for automation
@@ -185,7 +185,7 @@ After initialization, you can enable HTTP Basic Auth in the web UI (Settings). W
 
 ## State directory
 
-All persistent data lives in the state directory. Only one ShushTLS process may use a given state directory at a time (enforced by a lock file).
+All persistent data lives in the state directory. Only one ShushTLS process should use a given state directory at a time (a second process would hit port-in-use or similar).
 
 **Default location (platform config directory):**
 
@@ -207,7 +207,6 @@ Override with `-state-dir`.
       dns_names        # SAN config only; cert/key generated on each download. Service cert also has key.pem and cert.pem
   service-host       # Primary SAN of the cert used for ShushTLS’s own HTTPS
   auth.json          # Optional; present if auth was ever enabled
-  shushtls.lock      # Lock file while the server is running; removed on exit
 ```
 
 ## Docker
@@ -260,6 +259,6 @@ For whoever returns to this system after a long time.
 
 **Troubleshooting**
 
-- **“Another ShushTLS instance is already using …”** — Another process has that state directory, or a previous run didn’t release the lock. Ensure no other `shushtls` (or `go run` child) is running. If you’re sure nothing is using it, remove `shushtls.lock` in the state directory and try again.
+- **"Address already in use" / port in use** — Another process (often another ShushTLS instance) is bound to the same HTTP or HTTPS port. Stop the other process or use different `-http-addr` / `-https-addr`.
 - **“Cannot create state directory” / permission errors** — The state path must be writable and must be a directory (not a file).
 - **Browsers still don’t trust my certs** — The device must trust the **root** CA. Re-run the install script for that OS, or manually add the root cert to the system/browser trust store. Clearing the browser cache for the site can help after adding trust.

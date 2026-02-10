@@ -55,7 +55,7 @@
   <li><strong>No short-lived certs / automatic rotation.</strong> Certificates are issued with validity that meets current browser rules (see <a href="#cert-model">Certificate longevity</a> above). There is no built-in ACME, no auto-renewal. You re-issue when needed.</li>
   <li><strong>No revocation.</strong> There is no CRL or OCSP. If you need to revoke a cert, stop using it and re-issue a new one for that name if necessary.</li>
   <li><strong>No auth by default.</strong> The UI and API are open on the LAN. Optional HTTP Basic Auth can be enabled in <a href="/settings">Settings</a>.</li>
-  <li><strong>No HA / clustering.</strong> One instance, one state directory. A lock file prevents running two instances against the same state.</li>
+  <li><strong>No HA / clustering.</strong> One instance, one state directory. Running a second instance against the same state dir will conflict (e.g. port already in use).</li>
   <li><strong>No compliance or audit features.</strong> No certificate transparency, no detailed audit log. It's a small tool for people who want a private CA without ceremony.</li>
 </ul>
 </section>
@@ -63,7 +63,7 @@
 <section id="auth-state">
 <h2>Optional auth and state directory</h2>
 <p>After initialization, you can enable HTTP Basic Auth in <a href="/settings">Settings</a>. When enabled, it protects initialization, certificate issuance, and status; listing certs and downloading the root PEM remain unauthenticated so install scripts and devices can still get the root. Private key downloads require auth when auth is on.</p>
-<p><strong>State directory:</strong> Default is the platform config dir (e.g. <code>~/.config/shushtls</code> on Linux, <code>~/Library/Application Support/shushtls</code> on macOS). Override with <code>-state-dir</code>. Layout: <code>ca/</code> (root CA key and cert), <code>certs/</code> (one subdir per issued cert), <code>service-host</code>, <code>auth.json</code> (if auth enabled), <code>shushtls.lock</code> (only while the server is running). Only one ShushTLS process may use a given state directory at a time.</p>
+<p><strong>State directory:</strong> Default is the platform config dir (e.g. <code>~/.config/shushtls</code> on Linux, <code>~/Library/Application Support/shushtls</code> on macOS). Override with <code>-state-dir</code>. Layout: <code>ca/</code> (root CA key and cert), <code>certs/</code> (one subdir per issued cert), <code>service-host</code>, <code>auth.json</code> (if auth enabled). Only one ShushTLS process should use a given state directory at a time (a second would hit port-in-use or similar).</p>
 </section>
 
 <section id="api">
@@ -123,7 +123,7 @@ curl -sS -o key.pem -u user:pass "$BASE/api/certificates/$SAN?type=key"
 
 <h3>Troubleshooting</h3>
 <ul>
-  <li><strong>&ldquo;Another ShushTLS instance is already using …&rdquo;</strong> Another process has that state dir, or a previous run didn't release the lock. Ensure no other <code>shushtls</code> is running; if sure, remove <code>shushtls.lock</code> in the state dir.</li>
+  <li><strong>&ldquo;Address already in use&rdquo; / port in use:</strong> Another process (often another ShushTLS instance) is bound to the same HTTP or HTTPS port. Stop the other process or use different <code>-http-addr</code> / <code>-https-addr</code>.</li>
   <li><strong>Permission errors on state dir:</strong> The path must be writable and be a directory.</li>
   <li><strong>Browsers don't trust my certs:</strong> The device must trust the root CA. Re-run the install script for that OS or manually add the root cert to the trust store.</li>
 </ul>
