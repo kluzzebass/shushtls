@@ -667,6 +667,84 @@ func TestServiceCert_SANsMatchRequested(t *testing.T) {
 	}
 }
 
+// --- DesignateServiceCert ---
+
+func TestDesignateServiceCert_Success(t *testing.T) {
+	e := initEngine(t)
+
+	// Issue another cert.
+	if _, err := e.IssueCert([]string{"mybox.local", "localhost"}); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+
+	// Designate it as the service cert.
+	if err := e.DesignateServiceCert("mybox.local"); err != nil {
+		t.Fatalf("DesignateServiceCert: %v", err)
+	}
+
+	if e.ServiceHost() != "mybox.local" {
+		t.Errorf("host = %q, want mybox.local", e.ServiceHost())
+	}
+	if e.ServiceCert().PrimarySAN() != "mybox.local" {
+		t.Errorf("service cert SAN = %q, want mybox.local", e.ServiceCert().PrimarySAN())
+	}
+	// Old cert should still exist — it's just not the service cert anymore.
+	if e.GetCert("shushtls.home.arpa") == nil {
+		t.Error("old cert should still exist")
+	}
+	// State should still be Ready.
+	if e.State() != Ready {
+		t.Errorf("state = %s, want ready", e.State())
+	}
+}
+
+func TestDesignateServiceCert_NonexistentCert(t *testing.T) {
+	e := initEngine(t)
+
+	err := e.DesignateServiceCert("nonexistent.local")
+	if err == nil {
+		t.Fatal("expected error designating nonexistent cert")
+	}
+}
+
+func TestDesignateServiceCert_BeforeInit(t *testing.T) {
+	dir := t.TempDir()
+	e, err := New(dir)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	err = e.DesignateServiceCert("test.local")
+	if err == nil {
+		t.Fatal("expected error designating service cert before init")
+	}
+}
+
+func TestDesignateServiceCert_Persists(t *testing.T) {
+	e := initEngine(t)
+
+	// Issue and designate.
+	if _, err := e.IssueCert([]string{"mybox.local"}); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+	if err := e.DesignateServiceCert("mybox.local"); err != nil {
+		t.Fatalf("DesignateServiceCert: %v", err)
+	}
+
+	// Reload from disk — should restore the choice automatically.
+	e2, err := New(e.Store().dir)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+
+	if e2.ServiceHost() != "mybox.local" {
+		t.Errorf("reloaded host = %q, want mybox.local", e2.ServiceHost())
+	}
+	if e2.State() != Ready {
+		t.Errorf("reloaded state = %s, want ready", e2.State())
+	}
+}
+
 // --- IssueCertificate edge case ---
 
 func TestIssueCertificate_EmptyNames(t *testing.T) {

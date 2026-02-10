@@ -207,6 +207,27 @@ func (s *Store) certDir(primarySAN string) string {
 	return filepath.Join(s.dir, certDirName, SanitizeSAN(primarySAN))
 }
 
+// --- Service host persistence ---
+
+const serviceHostFile = "service-host"
+
+// SaveServiceHost writes the current service host (primary SAN) to disk.
+func (s *Store) SaveServiceHost(host string) error {
+	path := filepath.Join(s.dir, serviceHostFile)
+	return writeFileAtomic(path, []byte(host), certPerms)
+}
+
+// LoadServiceHost reads the persisted service host from disk.
+// Returns "" if no file exists.
+func (s *Store) LoadServiceHost() string {
+	path := filepath.Join(s.dir, serviceHostFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
 // --- SAN sanitization ---
 
 // SanitizeSAN converts a SAN into a safe directory name.

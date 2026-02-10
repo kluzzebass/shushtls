@@ -60,6 +60,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/status", h.requireAuth(h.handleStatus))
 	mux.HandleFunc("POST /api/initialize", h.requireAuth(h.handleInitialize))
 	mux.HandleFunc("POST /api/certificates", h.requireAuth(h.handleIssueCert))
+	mux.HandleFunc("POST /api/service-cert", h.requireAuth(h.handleSetServiceCert))
 	mux.HandleFunc("POST /api/auth", h.requireAuth(h.handleAuth))
 
 	// Unprotected routes — cert reads and install scripts.
@@ -75,6 +76,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	// Without these, wrong-method requests fall through to the /api/ catch-all
 	// and return 404 instead of 405.
 	mux.HandleFunc("/api/initialize", methodNotAllowed("POST"))
+	mux.HandleFunc("/api/service-cert", methodNotAllowed("POST"))
 	mux.HandleFunc("/api/status", methodNotAllowed("GET"))
 	mux.HandleFunc("/api/ca/root.pem", methodNotAllowed("GET"))
 	mux.HandleFunc("/api/auth", methodNotAllowed("POST"))
@@ -167,6 +169,17 @@ type AuthRequest struct {
 type AuthResponse struct {
 	Enabled bool   `json:"enabled"`
 	Message string `json:"message"`
+}
+
+// SetServiceCertRequest is the JSON body for POST /api/service-cert.
+type SetServiceCertRequest struct {
+	PrimarySAN string `json:"primary_san"`
+}
+
+// SetServiceCertResponse is the JSON body for POST /api/service-cert.
+type SetServiceCertResponse struct {
+	Cert    LeafCertInfo `json:"certificate"`
+	Message string       `json:"message"`
 }
 
 // ErrorResponse is the JSON body for error responses.
@@ -464,6 +477,50 @@ func (h *Handler) handleAuth(w http.ResponseWriter, r *http.Request) {
 			Message: "Authentication disabled.",
 		})
 	}
+}
+
+// POST /api/service-cert — designate an existing certificate as the service cert.
+func (h *Handler) handleSetServiceCert(w http.ResponseWriter, r *http.Request) {
+	if h.engine.State() == certengine.Uninitialized {
+		writeJSON(w, http.StatusConflict, ErrorResponse{
+			Error: "ShushTLS must be initialized first",
+		})
+		return
+	}
+
+	var req SetServiceCertRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{
+			Error: fmt.Sprintf("invalid request body: %v", err),
+		})
+		return
+	}
+
+	if req.PrimarySAN == "" {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{
+			Error: "primary_san is required",
+		})
+		return
+	}
+
+	if err := h.engine.DesignateServiceCert(req.PrimarySAN); err != nil {
+		h.logger.Error("failed to set service cert", "error", err)
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{
+			Error: err.Error(),
+		})
+		return
+	}
+
+	leaf := h.engine.ServiceCert()
+	info := leafInfo(leaf)
+	info.IsService = true
+
+	h.logger.Info("service certificate changed", "primarySAN", req.PrimarySAN)
+
+	writeJSON(w, http.StatusOK, SetServiceCertResponse{
+		Cert:    info,
+		Message: "Service certificate updated. New certificate is active immediately.",
+	})
 }
 
 // --- Root CA install helpers ---

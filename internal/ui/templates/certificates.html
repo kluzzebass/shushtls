@@ -17,8 +17,9 @@
         <th scope="col">Primary SAN</th>
         <th scope="col">DNS Names</th>
         <th scope="col">Valid Until</th>
-        <th scope="col">Type</th>
+        <th scope="col">Role</th>
         <th scope="col">Download</th>
+        <th scope="col"></th>
       </tr>
     </thead>
     <tbody>
@@ -27,10 +28,16 @@
         <td><code>{{.PrimarySAN}}</code></td>
         <td>{{range .DNSNames}}{{.}} {{end}}</td>
         <td>{{.NotAfter}}</td>
-        <td>{{if .IsService}}service{{else}}issued{{end}}</td>
+        <td>{{if .IsService}}<mark>service</mark>{{else}}issued{{end}}</td>
         <td>
           <a href="/api/certificates/{{.PrimarySAN}}">cert</a> &middot;
           <a href="/api/certificates/{{.PrimarySAN}}?type=key">key</a>
+        </td>
+        <td>
+          {{if not .IsService}}
+          <button class="outline secondary set-service-btn" data-san="{{.PrimarySAN}}"
+                  style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Use as service</button>
+          {{end}}
         </td>
       </tr>
       {{end}}

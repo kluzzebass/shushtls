@@ -116,6 +116,37 @@
     });
   }
 
+  // --- "Use as service" buttons (/certificates) ---
+
+  document.querySelectorAll(".set-service-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var san = btn.getAttribute("data-san");
+      btn.setAttribute("aria-busy", "true");
+      btn.disabled = true;
+
+      fetch("/api/service-cert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ primary_san: san }),
+      })
+        .then(function (resp) { return resp.json().then(function (data) { return { ok: resp.ok, data: data }; }); })
+        .then(function (result) {
+          if (result.ok) {
+            window.location.reload();
+          } else {
+            alert(result.data.error || "Failed to set service certificate.");
+            btn.setAttribute("aria-busy", "false");
+            btn.disabled = false;
+          }
+        })
+        .catch(function (err) {
+          alert("Network error: " + err.message);
+          btn.setAttribute("aria-busy", "false");
+          btn.disabled = false;
+        });
+    });
+  });
+
   // --- Auth enable form (/settings) ---
 
   const authEnableForm = document.getElementById("auth-enable-form");

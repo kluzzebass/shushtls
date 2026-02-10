@@ -916,6 +916,122 @@ func TestAuth_MissingFields(t *testing.T) {
 	}
 }
 
+// --- POST /api/service-cert ---
+
+func TestSetServiceCert_BeforeInit(t *testing.T) {
+	h, _ := newTestHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "POST", "/api/service-cert",
+		`{"primary_san": "something"}`)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", w.Code)
+	}
+}
+
+func TestSetServiceCert_EmptySAN(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "POST", "/api/service-cert", `{"primary_san": ""}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+func TestSetServiceCert_InvalidJSON(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "POST", "/api/service-cert", "not json")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+func TestSetServiceCert_NonexistentCert(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "POST", "/api/service-cert",
+		`{"primary_san": "nonexistent.local"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400\nbody: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestSetServiceCert_Success(t *testing.T) {
+	h, engine := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	// Issue another cert.
+	if _, err := engine.IssueCert([]string{"mybox.local"}); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+
+	w := doRequest(t, mux, "POST", "/api/service-cert",
+		`{"primary_san": "mybox.local"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200\nbody: %s", w.Code, w.Body.String())
+	}
+
+	resp := decodeJSON[SetServiceCertResponse](t, w)
+	if resp.Cert.PrimarySAN != "mybox.local" {
+		t.Errorf("primary_san = %q, want mybox.local", resp.Cert.PrimarySAN)
+	}
+	if !resp.Cert.IsService {
+		t.Error("cert should be marked as service")
+	}
+
+	// Engine should reflect the change.
+	if engine.ServiceHost() != "mybox.local" {
+		t.Errorf("engine host = %q, want mybox.local", engine.ServiceHost())
+	}
+
+	// Old cert should still exist — just no longer the service cert.
+	if engine.GetCert("shushtls.test") == nil {
+		t.Error("old cert should still exist")
+	}
+}
+
+func TestSetServiceCert_WrongMethod(t *testing.T) {
+	h, _ := newTestHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "GET", "/api/service-cert", "")
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", w.Code)
+	}
+}
+
+func TestSetServiceCert_Protected(t *testing.T) {
+	h, engine, _ := newInitializedAuthHandler(t)
+	mux := serveMux(h)
+
+	// Issue a cert to designate.
+	if _, err := engine.IssueCert([]string{"mybox.local"}); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+
+	// Enable auth.
+	doRequest(t, mux, "POST", "/api/auth",
+		`{"enabled": true, "username": "admin", "password": "secret123"}`)
+
+	// Without creds should 401.
+	w := doRequest(t, mux, "POST", "/api/service-cert",
+		`{"primary_san": "mybox.local"}`)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("unauthed: got %d, want 401", w.Code)
+	}
+
+	// With creds should work.
+	w = doAuthRequest(t, mux, "POST", "/api/service-cert",
+		`{"primary_san": "mybox.local"}`, "admin", "secret123")
+	if w.Code != http.StatusOK {
+		t.Errorf("authed: got %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestAuth_NilStoreIgnored(t *testing.T) {
 	// With nil auth store, auth endpoints should gracefully refuse.
 	h, _ := newInitializedHandler(t) // uses nil auth store

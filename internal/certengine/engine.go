@@ -109,6 +109,11 @@ func (e *Engine) Initialize(serviceHosts []string, caParams CAParams) (State, er
 		e.certs[e.serviceHost] = leaf
 	}
 
+	// Persist the service host choice.
+	if err := e.store.SaveServiceHost(e.serviceHost); err != nil {
+		return e.State(), fmt.Errorf("persist service host: %w", err)
+	}
+
 	return e.State(), nil
 }
 
@@ -201,6 +206,33 @@ func (e *Engine) load() error {
 		return fmt.Errorf("load certs: %w", err)
 	}
 	e.certs = certs
+
+	// Restore persisted service host choice.
+	if host := e.store.LoadServiceHost(); host != "" {
+		e.serviceHost = host
+	}
+
+	return nil
+}
+
+// DesignateServiceCert sets an existing issued certificate as the service
+// cert used by ShushTLS's HTTPS listener. The primarySAN must match a
+// cert that has already been issued. The choice is persisted to disk so
+// it survives restarts.
+func (e *Engine) DesignateServiceCert(primarySAN string) error {
+	if e.ca == nil {
+		return fmt.Errorf("cannot set service cert: root CA does not exist")
+	}
+	if e.certs[primarySAN] == nil {
+		return fmt.Errorf("no certificate found for %q", primarySAN)
+	}
+
+	e.serviceHost = primarySAN
+
+	// Persist the choice so it survives restarts.
+	if err := e.store.SaveServiceHost(primarySAN); err != nil {
+		return fmt.Errorf("persist service host: %w", err)
+	}
 
 	return nil
 }

@@ -43,9 +43,9 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("initialize certificate engine: %w", err)
 	}
 
-	// After loading from disk, re-associate the service host so
-	// Engine.ServiceCert() and Engine.State() work correctly.
-	if len(cfg.ServiceHosts) > 0 {
+	// If no persisted service host was loaded from disk, fall back to
+	// the CLI config. This handles first-run and legacy state dirs.
+	if engine.ServiceHost() == "" && len(cfg.ServiceHosts) > 0 {
 		engine.SetServiceHost(cfg.ServiceHosts[0])
 	}
 
@@ -160,21 +160,21 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 // startHTTPS creates and starts the HTTPS server in the background.
+// Uses GetCertificate to dynamically serve the current service cert,
+// so replacing the service cert takes effect without a restart.
 // Errors from the listener are sent to errCh.
 func (s *Server) startHTTPS(handler http.Handler, errCh chan<- error) (*http.Server, error) {
-	certPath, keyPath := s.engine.Store().CertPaths(s.engine.ServiceHost())
-
-	tlsCert, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("load TLS certificate: %w", err)
+	// Verify we have a service cert before starting.
+	if s.engine.ServiceCert() == nil {
+		return nil, fmt.Errorf("no service certificate available")
 	}
 
 	srv := &http.Server{
 		Addr:    s.config.HTTPSAddr,
 		Handler: handler,
 		TLSConfig: &tls.Config{
-			Certificates: []tls.Certificate{tlsCert},
-			MinVersion:   tls.VersionTLS12,
+			GetCertificate: s.getCertificate,
+			MinVersion:     tls.VersionTLS12,
 		},
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -252,6 +252,20 @@ func (s *Server) shutdownAll(httpSrv, httpsSrv *http.Server) error {
 	}
 	s.logger.Info("shutdown complete")
 	return firstErr
+}
+
+// getCertificate is the tls.Config.GetCertificate callback. It returns
+// the current service certificate from the engine on every TLS handshake,
+// so replacing the service cert takes effect immediately.
+func (s *Server) getCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	svc := s.engine.ServiceCert()
+	if svc == nil {
+		return nil, fmt.Errorf("no service certificate available")
+	}
+	return &tls.Certificate{
+		Certificate: [][]byte{svc.Raw},
+		PrivateKey:  svc.Key,
+	}, nil
 }
 
 // switchableHandler wraps an http.Handler and allows it to be atomically
