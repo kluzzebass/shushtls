@@ -23,6 +23,10 @@ FROM scratch
 # container restarts and image updates. If you don't, certs will be lost on update.
 VOLUME ["/data/shushtls"]
 
+# Env vars (override flag defaults): SHUSHTLS_STATE_DIR, SHUSHTLS_HTTP_ADDR,
+# SHUSHTLS_HTTPS_ADDR, SHUSHTLS_SERVICE_HOSTS (comma-separated hosts),
+# SHUSHTLS_NO_TLS (1/true/yes/on to disable HTTPS). Example:
+#   docker run -e SHUSHTLS_NO_TLS=1 -e SHUSHTLS_HTTP_ADDR=0.0.0.0:8080 ...
 EXPOSE 8080 8443
 
 COPY --from=builder /shushtls /shushtls

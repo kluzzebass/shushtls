@@ -119,6 +119,18 @@ func (s *Server) Run(ctx context.Context) error {
 		}
 	}()
 
+	// When -no-tls is set (e.g. behind a reverse proxy), never start HTTPS;
+	// HTTP serves the full app. Wait for shutdown.
+	if s.config.NoTLS {
+		select {
+		case err := <-errCh:
+			return err
+		case <-ctx.Done():
+			s.logger.Info("shutdown signal received")
+			return s.shutdownAll(httpSrv, nil)
+		}
+	}
+
 	var httpsSrv *http.Server
 
 	if state == certengine.Ready {
@@ -325,6 +337,12 @@ func (s *Server) logStartup(state certengine.State) {
 		"state", state.String(),
 		"state_dir", s.config.StateDir,
 		"http_url", httpURL,
+	}
+
+	if s.config.NoTLS {
+		attrs = append(attrs, "no_tls", true)
+		s.logger.Info("ShushTLS started (HTTP only)", attrs...)
+		return
 	}
 
 	switch state {

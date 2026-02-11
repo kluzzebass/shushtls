@@ -57,7 +57,12 @@ If you start with an empty state directory, you always get step 1 → 2 → 3 �
 | `-state-dir` | platform config dir (see [State directory](#state-directory)) | Where CA and issued certs are stored |
 | `-http-addr` | `:8080` | HTTP listen address (setup and redirect) |
 | `-https-addr` | `:8443` | HTTPS listen address |
+| `-no-tls` | `false` | Disable HTTPS; serve app over HTTP only (e.g. behind a reverse proxy) |
 | `-service-hosts` | `shushtls.local,localhost` | DNS names for ShushTLS’s own TLS cert |
+
+Env vars override defaults: `SHUSHTLS_STATE_DIR`, `SHUSHTLS_HTTP_ADDR`, `SHUSHTLS_HTTPS_ADDR`, `SHUSHTLS_SERVICE_HOSTS`, `SHUSHTLS_NO_TLS` (1/true/yes/on).
+
+**Running behind a reverse proxy:** If TLS is terminated at a proxy (Traefik, Caddy, nginx, etc.), use `-no-tls` so ShushTLS serves the app over HTTP only. The proxy handles HTTPS; no built-in HTTPS listener is started.
 
 ## Certificate model (root vs leaf)
 
@@ -263,7 +268,7 @@ volumes:
 
 Then: `docker compose up -d`. Replace `latest` with a release tag (e.g. `0.0.1`) if you want a pinned version.
 
-The container listens on `0.0.0.0:8080` (HTTP) and `0.0.0.0:8443` (HTTPS). Use `-state-dir /data/shushtls` if you override the entrypoint; the default CMD already points there. **Always use a named or bind volume for `/data/shushtls`** so certs are not lost on `docker pull` and re-create.
+The container listens on `0.0.0.0:8080` (HTTP) and `0.0.0.0:8443` (HTTPS). Use `-state-dir /data/shushtls` if you override the entrypoint; the default CMD already points there. **Always use a named or bind volume for `/data/shushtls`** so certs are not lost on `docker pull` and re-create. Env vars override flag defaults: `SHUSHTLS_STATE_DIR`, `SHUSHTLS_HTTP_ADDR`, `SHUSHTLS_HTTPS_ADDR`, `SHUSHTLS_SERVICE_HOSTS` (comma-separated), `SHUSHTLS_NO_TLS` (1/true/yes/on to disable HTTPS). For reverse-proxy deployments, set `SHUSHTLS_NO_TLS=1`.
 
 ## Maintenance
 

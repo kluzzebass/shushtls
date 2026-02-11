@@ -30,6 +30,11 @@ type Config struct {
 	// to issue the service certificate.
 	// Example: ["shushtls.local", "localhost"]
 	ServiceHosts []string
+
+	// NoTLS, when true, disables the built-in HTTPS listener. HTTP serves the
+	// full app (setup and UI). Use when ShushTLS runs behind a reverse proxy
+	// that terminates TLS (e.g. Traefik, Caddy, nginx).
+	NoTLS bool
 }
 
 // DefaultConfig returns a Config with sensible defaults.

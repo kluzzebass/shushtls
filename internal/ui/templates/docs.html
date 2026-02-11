@@ -45,6 +45,7 @@
   <li><strong>HTTPS active.</strong> As soon as initialization completes, the server enables HTTPS and redirects HTTP to it. No restart. Use the HTTPS URL from the logs and continue issuing certs from <a href="/certificates">Certificates</a>.</li>
 </ol>
 <p>If you start with an existing state directory (already initialized), the server goes straight to HTTPS and redirect.</p>
+<p><strong>Behind a reverse proxy:</strong> If TLS is terminated at a proxy (Traefik, Caddy, nginx, etc.), run with <code>-no-tls</code>. ShushTLS then serves the app over HTTP only; the proxy handles HTTPS and no built-in HTTPS listener is started.</p>
 </section>
 
 <section id="non-goals">
