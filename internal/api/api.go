@@ -4,6 +4,7 @@
 package api
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"crypto/sha256"
 	"crypto/x509"
@@ -50,7 +51,6 @@ func NewHandler(engine *certengine.Engine, serviceHosts []string, logger *slog.L
 //   - POST /api/certificates
 //   - POST /api/auth
 //   - GET  /api/status
-//   - GET  /api/certificates/{san}?type=key (private key downloads)
 //   - GET  /api/certificates/{san}?type=zip (cert+key bundle; auth when enabled)
 //   - GET  /api/leaf-subject (default O, OU, C, L, ST for leaf certs)
 //   - PUT  /api/leaf-subject (update default subject; body: LeafSubjectParams JSON)
@@ -58,7 +58,7 @@ func NewHandler(engine *certengine.Engine, serviceHosts []string, logger *slog.L
 // Unprotected endpoints (always open):
 //   - GET  /api/ca/root.pem
 //   - GET  /api/certificates (listing)
-//   - GET  /api/certificates/{san} (cert downloads; use ?type=key or ?type=zip for key/bundle)
+//   - GET  /api/certificates/{san} or ?type=zip (cert+key zip bundle; auth when enabled)
 //   - GET  /api/ca/install/*
 func (h *Handler) Register(mux *http.ServeMux) {
 	// Protected routes.
@@ -73,7 +73,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	// Unprotected routes — cert reads and install scripts.
 	mux.HandleFunc("GET /api/ca/root.pem", h.handleCACert)
 	mux.HandleFunc("GET /api/certificates", h.handleListCerts)
-	mux.HandleFunc("GET /api/certificates/", h.handleGetCert) // auth checked inside for ?type=key and ?type=zip
+	mux.HandleFunc("GET /api/certificates/", h.handleGetCert) // auth checked inside for zip bundle
 	mux.HandleFunc("GET /api/ca/install", h.handleInstallIndex)
 	mux.HandleFunc("GET /api/ca/install/macos", h.handleInstallMacOS)
 	mux.HandleFunc("GET /api/ca/install/linux", h.handleInstallLinux)
@@ -350,8 +350,9 @@ func (h *Handler) handleIssueCert(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /api/certificates/{san}
-// Downloads the certificate (and optionally key) for the given primary SAN.
-// Query: type=cert (default), type=key (private key), or type=zip (cert+key bundle).
+// Downloads the certificate and private key as a bundle for the given primary SAN.
+// Query: type=zip, type=tar (default tar) — cert and key are always returned together to guarantee a matching pair.
+// Use type=tar for systems without unzip (e.g. Synology DSM). Separate cert/key fetches are not supported.
 // The {san} is the URL path after /api/certificates/.
 func (h *Handler) handleGetCert(w http.ResponseWriter, r *http.Request) {
 	// Extract the SAN from the URL path.
@@ -363,11 +364,15 @@ func (h *Handler) handleGetCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine what to return based on query parameter.
-	// ?type=cert (default), ?type=key (private key), or ?type=zip (cert+key bundle).
 	which := r.URL.Query().Get("type")
 	if which == "" {
-		which = "cert"
+		which = "tar"
+	}
+	if which != "zip" && which != "tar" {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{
+			Error: "use type=zip or type=tar to download cert+key bundle (separate cert/key downloads are not supported)",
+		})
+		return
 	}
 
 	leaf := h.engine.GetCert(san)
@@ -378,63 +383,54 @@ func (h *Handler) handleGetCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Auth check for bundle download (contains private key).
+	if h.authStore != nil && h.authStore.IsEnabled() {
+		username, password, ok := r.BasicAuth()
+		if !ok || !h.authStore.Verify(username, password) {
+			w.Header().Set("WWW-Authenticate", `Basic realm="ShushTLS"`)
+			writeJSON(w, http.StatusUnauthorized, ErrorResponse{
+				Error: "authentication required for certificate bundle download",
+			})
+			return
+		}
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
+	der, err := x509.MarshalECPrivateKey(leaf.Key)
+	if err != nil {
+		h.internalError(w, "failed to export private key for bundle", err)
+		return
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})
+	base := certengine.SanitizeSAN(san)
+
 	switch which {
-	case "cert":
-		pemBlock := pem.EncodeToMemory(&pem.Block{
-			Type:  "CERTIFICATE",
-			Bytes: leaf.Raw,
-		})
-		w.Header().Set("Content-Type", "application/x-pem-file")
-		w.Header().Set("Content-Disposition",
-			fmt.Sprintf("attachment; filename=%q", certengine.SanitizeSAN(san)+".cert.pem"))
-		w.Write(pemBlock)
-
-	case "key":
-		// Private key downloads are protected by auth.
-		if h.authStore != nil && h.authStore.IsEnabled() {
-			username, password, ok := r.BasicAuth()
-			if !ok || !h.authStore.Verify(username, password) {
-				w.Header().Set("WWW-Authenticate", `Basic realm="ShushTLS"`)
-				writeJSON(w, http.StatusUnauthorized, ErrorResponse{
-					Error: "authentication required for private key download",
-				})
+	case "tar":
+		w.Header().Set("Content-Type", "application/x-tar")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", base+".tar"))
+		tw := tar.NewWriter(w)
+		for _, entry := range []struct {
+			name string
+			data []byte
+		}{
+			{base + ".cert.pem", certPEM},
+			{base + ".key.pem", keyPEM},
+		} {
+			if err := tw.WriteHeader(&tar.Header{Name: entry.name, Mode: 0644, Size: int64(len(entry.data))}); err != nil {
+				tw.Close()
+				h.internalError(w, "failed to write tar header", err)
+				return
+			}
+			if _, err := tw.Write(entry.data); err != nil {
+				tw.Close()
+				h.internalError(w, "failed to write tar entry", err)
 				return
 			}
 		}
-		der, err := x509.MarshalECPrivateKey(leaf.Key)
-		if err != nil {
-			h.internalError(w, "failed to export private key", err)
+		if err := tw.Close(); err != nil {
+			h.internalError(w, "failed to close tar", err)
 			return
 		}
-		pemBlock := pem.EncodeToMemory(&pem.Block{
-			Type:  "EC PRIVATE KEY",
-			Bytes: der,
-		})
-		w.Header().Set("Content-Type", "application/x-pem-file")
-		w.Header().Set("Content-Disposition",
-			fmt.Sprintf("attachment; filename=%q", certengine.SanitizeSAN(san)+".key.pem"))
-		w.Write(pemBlock)
-
 	case "zip":
-		// Zip bundle contains cert + key from the same GetCert result so the pair always matches.
-		if h.authStore != nil && h.authStore.IsEnabled() {
-			username, password, ok := r.BasicAuth()
-			if !ok || !h.authStore.Verify(username, password) {
-				w.Header().Set("WWW-Authenticate", `Basic realm="ShushTLS"`)
-				writeJSON(w, http.StatusUnauthorized, ErrorResponse{
-					Error: "authentication required for certificate bundle download",
-				})
-				return
-			}
-		}
-		certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
-		der, err := x509.MarshalECPrivateKey(leaf.Key)
-		if err != nil {
-			h.internalError(w, "failed to export private key for bundle", err)
-			return
-		}
-		keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})
-		base := certengine.SanitizeSAN(san)
 		w.Header().Set("Content-Type", "application/zip")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", base+".zip"))
 		zw := zip.NewWriter(w)
@@ -461,11 +457,6 @@ func (h *Handler) handleGetCert(w http.ResponseWriter, r *http.Request) {
 			h.internalError(w, "failed to close zip", err)
 			return
 		}
-
-	default:
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{
-			Error: fmt.Sprintf("unknown type %q — use \"cert\", \"key\", or \"zip\"", which),
-		})
 	}
 }
 

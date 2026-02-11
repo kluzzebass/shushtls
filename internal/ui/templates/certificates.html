@@ -1,7 +1,7 @@
 {{define "title"}}ShushTLS — Certificates{{end}}
 {{define "content"}}
 <h1>Certificates</h1>
-<p>Issue TLS certificates for your services (NAS, web apps, etc.) and download cert + key. Each certificate is signed by your root CA. Browsers will accept it on any device where you've installed the root (see <a href="/trust">Install CA</a> page). The <strong>service</strong> cert is the one used for this ShushTLS web interface; you can change it with &ldquo;Use as service&rdquo; on any other cert.</p>
+<p>Issue TLS certificates for your services (NAS, web apps, etc.) and download cert+key bundles (zip). Each certificate is signed by your root CA. Browsers will accept it on any device where you've installed the root (see <a href="/trust">Install CA</a> page). The <strong>service</strong> cert is the one used for this ShushTLS web interface; you can change it with &ldquo;Use as service&rdquo; on any other cert.</p>
 
 {{if eq .State "uninitialized"}}
 <article>
@@ -31,9 +31,8 @@
         <td>{{.NotAfter}}</td>
         <td>{{if .IsService}}<mark>service</mark>{{else}}issued{{end}}</td>
         <td>
-          <a href="/api/certificates/{{.PrimarySAN}}">cert</a> &middot;
-          <a href="/api/certificates/{{.PrimarySAN}}?type=key">key</a> &middot;
-          <a href="/api/certificates/{{.PrimarySAN}}?type=zip">zip</a>
+          <a href="/api/certificates/{{.SANURL}}?type=tar" download>tar</a> &middot;
+          <a href="/api/certificates/{{.SANURL}}?type=zip" download>zip</a>
         </td>
         <td>
           {{if not .IsService}}

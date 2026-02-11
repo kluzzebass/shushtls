@@ -447,49 +447,6 @@ func TestGetCert_NotFound(t *testing.T) {
 	}
 }
 
-func TestGetCert_DownloadCert(t *testing.T) {
-	h, engine := newInitializedHandler(t)
-	mux := serveMux(h)
-
-	if _, err := engine.IssueCert([]string{"nas.example.com"}, nil); err != nil {
-		t.Fatalf("IssueCert: %v", err)
-	}
-
-	w := doRequest(t, mux, "GET", "/api/certificates/nas.example.com", "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
-	}
-
-	ct := w.Header().Get("Content-Type")
-	if ct != "application/x-pem-file" {
-		t.Errorf("Content-Type = %q, want application/x-pem-file", ct)
-	}
-
-	block, _ := pem.Decode(w.Body.Bytes())
-	if block == nil || block.Type != "CERTIFICATE" {
-		t.Fatal("response is not a valid PEM certificate")
-	}
-}
-
-func TestGetCert_DownloadKey(t *testing.T) {
-	h, engine := newInitializedHandler(t)
-	mux := serveMux(h)
-
-	if _, err := engine.IssueCert([]string{"nas.example.com"}, nil); err != nil {
-		t.Fatalf("IssueCert: %v", err)
-	}
-
-	w := doRequest(t, mux, "GET", "/api/certificates/nas.example.com?type=key", "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
-	}
-
-	block, _ := pem.Decode(w.Body.Bytes())
-	if block == nil || block.Type != "EC PRIVATE KEY" {
-		t.Fatal("response is not a valid PEM private key")
-	}
-}
-
 func TestGetCert_DownloadZip(t *testing.T) {
 	h, engine := newInitializedHandler(t)
 	mux := serveMux(h)
@@ -498,50 +455,51 @@ func TestGetCert_DownloadZip(t *testing.T) {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
-	w := doRequest(t, mux, "GET", "/api/certificates/nas.example.com?type=zip", "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
-	}
-
-	ct := w.Header().Get("Content-Type")
-	if ct != "application/zip" {
-		t.Errorf("Content-Type = %q, want application/zip", ct)
-	}
-
-	zr, err := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len()))
-	if err != nil {
-		t.Fatalf("zip.NewReader: %v", err)
-	}
-	if len(zr.File) != 2 {
-		t.Fatalf("zip has %d files, want 2", len(zr.File))
-	}
-	names := make(map[string]bool)
-	for _, f := range zr.File {
-		names[f.Name] = true
-		rc, err := f.Open()
+	// Default (no type) returns tar; type=zip returns zip.
+	for _, path := range []string{"/api/certificates/nas.example.com?type=zip"} {
+		w := doRequest(t, mux, "GET", path, "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", path, w.Code)
+		}
+		ct := w.Header().Get("Content-Type")
+		if ct != "application/zip" {
+			t.Errorf("%s: Content-Type = %q, want application/zip", path, ct)
+		}
+		zr, err := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len()))
 		if err != nil {
-			t.Fatalf("open zip entry %q: %v", f.Name, err)
+			t.Fatalf("zip.NewReader: %v", err)
 		}
-		var buf bytes.Buffer
-		if _, err := io.Copy(&buf, rc); err != nil {
+		if len(zr.File) != 2 {
+			t.Fatalf("zip has %d files, want 2", len(zr.File))
+		}
+		names := make(map[string]bool)
+		for _, f := range zr.File {
+			names[f.Name] = true
+			rc, err := f.Open()
+			if err != nil {
+				t.Fatalf("open zip entry %q: %v", f.Name, err)
+			}
+			var buf bytes.Buffer
+			if _, err := io.Copy(&buf, rc); err != nil {
+				rc.Close()
+				t.Fatalf("read zip entry %q: %v", f.Name, err)
+			}
 			rc.Close()
-			t.Fatalf("read zip entry %q: %v", f.Name, err)
+			block, _ := pem.Decode(buf.Bytes())
+			if block == nil {
+				t.Fatalf("zip entry %q is not valid PEM", f.Name)
+			}
+			if strings.HasSuffix(f.Name, ".cert.pem") && block.Type != "CERTIFICATE" {
+				t.Fatalf("zip entry %q: PEM type = %q, want CERTIFICATE", f.Name, block.Type)
+			}
+			if strings.HasSuffix(f.Name, ".key.pem") && block.Type != "EC PRIVATE KEY" {
+				t.Fatalf("zip entry %q: PEM type = %q, want EC PRIVATE KEY", f.Name, block.Type)
+			}
 		}
-		rc.Close()
-		block, _ := pem.Decode(buf.Bytes())
-		if block == nil {
-			t.Fatalf("zip entry %q is not valid PEM", f.Name)
+		base := certengine.SanitizeSAN("nas.example.com")
+		if !names[base+".cert.pem"] || !names[base+".key.pem"] {
+			t.Errorf("zip entries = %v, want %q and %q", names, base+".cert.pem", base+".key.pem")
 		}
-		if strings.HasSuffix(f.Name, ".cert.pem") && block.Type != "CERTIFICATE" {
-			t.Fatalf("zip entry %q: PEM type = %q, want CERTIFICATE", f.Name, block.Type)
-		}
-		if strings.HasSuffix(f.Name, ".key.pem") && block.Type != "EC PRIVATE KEY" {
-			t.Fatalf("zip entry %q: PEM type = %q, want EC PRIVATE KEY", f.Name, block.Type)
-		}
-	}
-	base := certengine.SanitizeSAN("nas.example.com")
-	if !names[base+".cert.pem"] || !names[base+".key.pem"] {
-		t.Errorf("zip entries = %v, want %q and %q", names, base+".cert.pem", base+".key.pem")
 	}
 }
 
@@ -553,9 +511,35 @@ func TestGetCert_InvalidType(t *testing.T) {
 		t.Fatalf("IssueCert: %v", err)
 	}
 
-	w := doRequest(t, mux, "GET", "/api/certificates/nas.example.com?type=bogus", "")
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", w.Code)
+	for _, typ := range []string{"bogus", "cert", "key"} {
+		w := doRequest(t, mux, "GET", "/api/certificates/nas.example.com?type="+typ, "")
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("type=%q: status = %d, want 400", typ, w.Code)
+		}
+	}
+}
+
+func TestGetCert_DownloadTar(t *testing.T) {
+	h, engine := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	if _, err := engine.IssueCert([]string{"nas.example.com"}, nil); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+
+	// Default (no type) and type=tar both return tar.
+	for _, path := range []string{"/api/certificates/nas.example.com", "/api/certificates/nas.example.com?type=tar"} {
+		w := doRequest(t, mux, "GET", path, "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d, want 200", path, w.Code)
+		}
+		ct := w.Header().Get("Content-Type")
+		if ct != "application/x-tar" {
+			t.Errorf("%s: Content-Type = %q, want application/x-tar", path, ct)
+		}
+		if !strings.Contains(w.Body.String(), "CERTIFICATE") || !strings.Contains(w.Body.String(), "EC PRIVATE KEY") {
+			t.Error("tar should contain cert and key PEM blocks")
+		}
 	}
 }
 
@@ -953,10 +937,10 @@ func TestAuth_UnprotectedEndpoints(t *testing.T) {
 	}
 
 	// These should remain accessible without creds.
+	// Certificate bundle (zip) is protected when auth is on (contains private key).
 	unprotected := []string{
 		"/api/ca/root.pem",
 		"/api/certificates",
-		"/api/certificates/nas.local",
 		"/api/ca/install",
 		"/api/ca/install/macos",
 		"/api/ca/install/linux",
@@ -971,7 +955,7 @@ func TestAuth_UnprotectedEndpoints(t *testing.T) {
 	}
 }
 
-func TestAuth_KeyDownloadProtected(t *testing.T) {
+func TestAuth_BundleDownloadProtected(t *testing.T) {
 	h, engine, _ := newInitializedAuthHandler(t)
 	mux := serveMux(h)
 
@@ -983,20 +967,8 @@ func TestAuth_KeyDownloadProtected(t *testing.T) {
 	doRequest(t, mux, "POST", "/api/auth",
 		`{"enabled": true, "username": "admin", "password": "s3cret"}`)
 
-	// Key download without creds should 401.
-	w := doRequest(t, mux, "GET", "/api/certificates/nas.local?type=key", "")
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("unauthed key download: got %d, want 401", w.Code)
-	}
-
-	// Key download with creds should work.
-	w = doAuthRequest(t, mux, "GET", "/api/certificates/nas.local?type=key", "", "admin", "s3cret")
-	if w.Code != http.StatusOK {
-		t.Errorf("authed key download: got %d, want 200", w.Code)
-	}
-
 	// Zip bundle without creds should 401 (contains key).
-	w = doRequest(t, mux, "GET", "/api/certificates/nas.local?type=zip", "")
+	w := doRequest(t, mux, "GET", "/api/certificates/nas.local?type=zip", "")
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("unauthed zip download: got %d, want 401", w.Code)
 	}

@@ -46,7 +46,7 @@ If you start with an empty state directory, you always get step 1 → 2 → 3 �
 
 ![Install CA](assets/install_ca.png)
 
-**Certificates** — Issue leaf certs and download cert, key, or zip bundle.
+**Certificates** — Issue leaf certs and download cert+key bundle (zip).
 
 ![Certificates](assets/certificates.png)
 
@@ -106,9 +106,7 @@ As certificate validity periods get shorter (see [Certificate longevity](#certif
 |--------|------|------|-------------|
 | GET | `/api/certificates` | no | List all issued certificates (JSON). |
 | POST | `/api/certificates` | yes | Register a certificate (SAN config). Body: `{"dns_names": ["host.example.com", "*.example.com"]}`. Idempotent. The actual cert and key are generated on download (GET). |
-| GET | `/api/certificates/{primary_san}` | no | Download certificate PEM. Example: `GET /api/certificates/nas.example.com` |
-| GET | `/api/certificates/{primary_san}?type=key` | yes | Download private key PEM. Requires auth when auth is enabled. |
-| GET | `/api/certificates/{primary_san}?type=zip` | yes | Download cert+key bundle (zip). Matching pair guaranteed. Requires auth when auth is enabled. |
+| GET | `/api/certificates/{primary_san}` | yes | Download cert+key bundle. Use `?type=tar` (default) or `?type=zip`. Tar works on systems without unzip (e.g. Synology DSM). |
 | GET | `/api/ca/root.pem` | no | Download root CA certificate (PEM). |
 
 `{primary_san}` is the first DNS name in the certificate (e.g. `nas.example.com` or `*.example.com`). For wildcards, the path uses the literal `*` (URL-encode as `%2A` if needed).
@@ -129,7 +127,7 @@ Returns a JSON array of certificate objects:
 ]
 ```
 
-Use `not_after` to plan when to fetch a fresh cert. Leaf certs (except the service cert) are generated on each download: `GET /api/certificates/{san}` and `GET /api/certificates/{san}?type=key` return a new cert and key every time. No need to remove or re-issue; just download again before expiry and deploy to your service.
+Use `not_after` to plan when to fetch a fresh cert. Leaf certs (except the service cert) are generated on download. Download the bundle: `GET /api/certificates/{san}?type=tar` (default) or `?type=zip` returns cert and key together (matching pair guaranteed). No need to remove or re-issue; just download again before expiry and deploy to your service.
 
 ### Issue request/response (POST /api/certificates)
 
@@ -168,10 +166,10 @@ curl -sS -X POST "$BASE/api/certificates" \
   -H "Content-Type: application/json" \
   -d "{\"dns_names\": [\"$SAN\"]}" | jq .
 
-# Download cert and key (key requires auth if enabled). Or use ?type=zip for a matching pair in one request.
-curl -sS -o cert.pem "$BASE/api/certificates/$SAN"
-curl -sS -o key.pem -u user:pass "$BASE/api/certificates/$SAN?type=key"
-# Or: curl -sS -o bundle.zip -u user:pass "$BASE/api/certificates/$SAN?type=zip"
+# Download cert+key bundle (one request; matching pair guaranteed). Add -u user:pass if auth is enabled.
+# Use type=tar for systems without unzip (e.g. Synology DSM)
+curl -sS -o bundle.tar "$BASE/api/certificates/$SAN?type=tar"
+tar -x -f bundle.tar
 ```
 
 ### Other endpoints
@@ -188,7 +186,7 @@ After initialization, you can set default subject fields (Organization, OU, Coun
 
 ## Optional auth
 
-After initialization, you can enable HTTP Basic Auth in the web UI (Settings). When enabled, it protects initialization, certificate issuance, service-cert designation, and status; listing certs and downloading the root PEM remain unauthenticated so install scripts and devices can still get the root. Private key downloads require auth when auth is on.
+After initialization, you can enable HTTP Basic Auth in the web UI (Settings). When enabled, it protects initialization, certificate issuance, service-cert designation, and status; listing certs and downloading the root PEM remain unauthenticated so install scripts and devices can still get the root. Certificate bundle (zip) downloads require auth when auth is on.
 
 ## State directory
 
@@ -293,7 +291,7 @@ For whoever returns to this system after a long time.
 
 **Regenerating or re-issuing certificates**
 
-- **Leaf certs (non-service):** Certs are generated on download. Register the SAN once via the UI (Certificates) or `POST /api/certificates`; then `GET /api/certificates/{san}` and `GET /api/certificates/{san}?type=key` return a fresh cert and key every time. To get a new cert, just download again and deploy to your service. No removal or re-issue step.
+- **Leaf certs (non-service):** Certs are generated on download. Register the SAN once via the UI (Certificates) or `POST /api/certificates`; then `GET /api/certificates/{san}?type=tar` (or `?type=zip`) returns a fresh cert+key bundle. To get a new cert, just download again and deploy to your service. No removal or re-issue step.
 - **ShushTLS’s own HTTPS cert (service cert):** Stored on disk. Issue another cert from the UI and choose “Use as service.” No restart; the server picks it up immediately.
 - **Root CA:** Generated once at initialization. There is no in-app “regenerate root.” Replacing it would mean re-trusting on every device (effectively start over with a new state dir or backup).
 
@@ -301,7 +299,7 @@ For whoever returns to this system after a long time.
 
 **If a certificate expires**
 
-- **Leaf certs (non-service):** Download again from the UI (cert + key) or via `GET /api/certificates/{san}` and `?type=key`; you get a fresh cert and key each time. Deploy to your service. Use the [longevity table](#certificate-longevity-leaf-certs) to plan; the UI shows validity.
+- **Leaf certs (non-service):** Download again from the UI or via `GET /api/certificates/{san}?type=tar` (or `?type=zip`); you get a fresh cert+key bundle. Deploy to your service. Use the [longevity table](#certificate-longevity-leaf-certs) to plan; the UI shows validity.
 - **Root CA:** Default validity is 25 years. If it ever approaches expiry, you’d generate a new root (e.g. new state dir) and re-install trust on all devices.
 
 **Rebuilding the binary:** `just build` (or `go build -o shushtls .`). Tests: `just test`. Run: `just run` or `./shushtls` with optional flags. Dependencies are in `go.mod` / `go.sum`; requires a Go toolchain. The version on the About page defaults to `dev`; for a release build use `just build-release 1.0.0` or `go build -ldflags "-X shushtls/internal/version.Version=1.0.0" -o shushtls .`.

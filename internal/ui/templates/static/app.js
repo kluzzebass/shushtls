@@ -332,6 +332,22 @@
     return div.innerHTML;
   }
 
+  // --- Recipe certificate selector ---
+  var recipeCertSelect = document.getElementById("recipe-cert-select");
+  var synologyScript = document.getElementById("synology-deploy-script");
+  if (recipeCertSelect && synologyScript) {
+    var synologyScriptTemplate = synologyScript.textContent;
+    function updateRecipeScripts() {
+      var san = recipeCertSelect.value;
+      var sanUrl = encodeURIComponent(san);
+      synologyScript.textContent = synologyScriptTemplate
+        .replace("__CERT_SAN__", san)
+        .replace("__CERT_SAN_URL__", sanUrl);
+    }
+    updateRecipeScripts();
+    recipeCertSelect.addEventListener("change", updateRecipeScripts);
+  }
+
   // --- Theme toggle (Pico light/dark) ---
   var themeToggle = document.getElementById("theme-toggle");
   if (themeToggle) {

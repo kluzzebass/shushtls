@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"shushtls/internal/auth"
@@ -133,6 +134,7 @@ type caInfo struct {
 
 type certInfo struct {
 	PrimarySAN string
+	SANURL     string // URL path-encoded for /api/certificates/ link
 	DNSNames   []string
 	NotBefore  string
 	NotAfter   string
@@ -255,16 +257,18 @@ func buildCAInfo(cert *x509.Certificate) *caInfo {
 func buildCertInfo(leaf *certengine.LeafCert, serviceHost string) certInfo {
 	return certInfo{
 		PrimarySAN: leaf.PrimarySAN(),
-		DNSNames:   leaf.Cert.DNSNames,
-		NotBefore:  leaf.Cert.NotBefore.UTC().Format("2006-01-02"),
-		NotAfter:   leaf.Cert.NotAfter.UTC().Format("2006-01-02"),
-		IsService:  leaf.PrimarySAN() == serviceHost,
+		SANURL:      url.PathEscape(leaf.PrimarySAN()),
+		DNSNames:    leaf.Cert.DNSNames,
+		NotBefore:   leaf.Cert.NotBefore.UTC().Format("2006-01-02"),
+		NotAfter:    leaf.Cert.NotAfter.UTC().Format("2006-01-02"),
+		IsService:   leaf.PrimarySAN() == serviceHost,
 	}
 }
 
 func buildCertInfoFromItem(item *certengine.CertListItem, serviceHost string) certInfo {
 	ci := certInfo{
 		PrimarySAN: item.PrimarySAN,
+		SANURL:     url.PathEscape(item.PrimarySAN),
 		DNSNames:   item.DNSNames,
 		IsService:  item.PrimarySAN == serviceHost,
 	}
