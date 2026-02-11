@@ -213,6 +213,13 @@ Override with `-state-dir`.
 
 ## Docker
 
+Release images are published to [GitHub Container Registry](https://ghcr.io). Pull and run (e.g. replace `VERSION` with a release tag like `0.0.1`):
+
+```bash
+docker pull ghcr.io/kluzzebass/shushtls:VERSION
+docker run -d --name shushtls -v shushtls-data:/data/shushtls -p 8080:8080 -p 8443:8443 ghcr.io/kluzzebass/shushtls:VERSION
+```
+
 Build and run with Docker. The image uses a **volume for the state directory** so your CA and certs survive container restarts and image updates. If you don’t mount a volume, state is lost when the container is replaced.
 
 **Build (single arch, current platform):**
@@ -237,6 +244,24 @@ docker run -d --name shushtls \
   -p 8080:8080 -p 8443:8443 \
   shushtls
 ```
+
+**Docker Compose** (named volume for state):
+
+```yaml
+services:
+  shushtls:
+    image: ghcr.io/kluzzebass/shushtls:latest
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    volumes:
+      - shushtls-data:/data/shushtls
+
+volumes:
+  shushtls-data:
+```
+
+Then: `docker compose up -d`. Replace `latest` with a release tag (e.g. `0.0.1`) if you want a pinned version.
 
 The container listens on `0.0.0.0:8080` (HTTP) and `0.0.0.0:8443` (HTTPS). Use `-state-dir /data/shushtls` if you override the entrypoint; the default CMD already points there. **Always use a named or bind volume for `/data/shushtls`** so certs are not lost on `docker pull` and re-create.
 

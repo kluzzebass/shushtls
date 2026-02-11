@@ -11,8 +11,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+# VERSION is set by CI (e.g. 0.0.1) for release images; defaults to dev.
+ARG VERSION=dev
 # GOARCH is the builder's arch; buildx runs one builder per platform so multi-arch works.
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /shushtls .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X shushtls/internal/version.Version=${VERSION}" -o /shushtls .
 
 # Runtime stage: scratch (no OS, just the binary). State lives in a volume.
 FROM scratch

@@ -118,6 +118,9 @@ curl -sS -o key.pem -u user:pass "$BASE/api/certificates/$SAN?type=key"
 <h3>If a certificate expires</h3>
 <p><strong>Leaf certs:</strong> Re-issue before expiry from <a href="/certificates">Certificates</a> and deploy the new cert to your service. Use the <a href="#cert-model">Certificate longevity</a> table to plan. <strong>Root CA:</strong> Default 25 years. If it ever approaches expiry, you'd generate a new root and re-install trust on all devices.</p>
 
+<h3>Running with Docker</h3>
+<p>Release images are published to GitHub Container Registry (<code>ghcr.io/kluzzebass/shushtls</code>). Use a volume for the state directory (e.g. <code>-v shushtls-data:/data/shushtls</code>) and publish ports 8080 (HTTP) and 8443 (HTTPS). See the project README for exact <code>docker pull</code> and <code>docker run</code> commands.</p>
+
 <h3>Rebuilding the binary</h3>
 <p><code>just build</code> (or <code>go build -o shushtls .</code>). Tests: <code>just test</code>. Run: <code>just run</code> or <code>./shushtls</code> with optional flags.</p>
 
