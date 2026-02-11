@@ -145,5 +145,6 @@ const RootCAKeyUsages = x509.KeyUsageCertSign | x509.KeyUsageCRLSign
 const LeafKeyUsages = x509.KeyUsageDigitalSignature
 
 // LeafExtKeyUsages defines the extended key usage for leaf certificates.
-// ServerAuth only — these certs are for TLS servers, not clients.
-var LeafExtKeyUsages = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+// ServerAuth and ClientAuth — certs can be used for TLS server identity,
+// client authentication (mTLS), or both.
+var LeafExtKeyUsages = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}

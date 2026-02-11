@@ -67,7 +67,7 @@ Env vars override defaults: `SHUSHTLS_STATE_DIR`, `SHUSHTLS_HTTP_ADDR`, `SHUSHTL
 ## Certificate model (root vs leaf)
 
 - **Root CA (one per ShushTLS instance).** A long-lived certificate that acts as the trust anchor. You install this in your OS or browser trust store. Once a device trusts it, that device will accept any certificate signed by this root. ShushTLS generates it at initialization and keeps it in the state directory. **Validity:** 25 years by default.
-- **Leaf certificates (many).** Certificates signed by your root, each bound to specific DNS names (e.g. `nas.example.com` or `*.example.com`). You issue these via the UI or API and use them on your services. Browsers accept them because they chain to the root CA you installed. **Validity:** follows the CA/Browser Forum rules below.
+- **Leaf certificates (many).** Certificates signed by your root, each bound to specific DNS names (e.g. `nas.example.com` or `*.example.com`). You issue these via the UI or API and use them on your services (server auth) or for client authentication (mTLS). Browsers accept them because they chain to the root CA you installed. **Validity:** follows the CA/Browser Forum rules below.
 - **Why install the root on each device?** Browsers and OSes only trust a fixed set of public CAs. Your ShushTLS root is private, so every device that should accept your certs must be told to trust that root. The install scripts in the web UI do exactly that.
 
 So: one root (you install it once per device), many leaves (you issue as needed).

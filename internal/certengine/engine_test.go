@@ -658,15 +658,21 @@ func TestLeafCert_ExtKeyUsage(t *testing.T) {
 		t.Fatal("GetCert returned nil")
 	}
 
-	found := false
+	hasServerAuth := false
+	hasClientAuth := false
 	for _, eku := range leaf.Cert.ExtKeyUsage {
 		if eku == x509.ExtKeyUsageServerAuth {
-			found = true
-			break
+			hasServerAuth = true
+		}
+		if eku == x509.ExtKeyUsageClientAuth {
+			hasClientAuth = true
 		}
 	}
-	if !found {
+	if !hasServerAuth {
 		t.Error("leaf cert missing ExtKeyUsageServerAuth")
+	}
+	if !hasClientAuth {
+		t.Error("leaf cert missing ExtKeyUsageClientAuth")
 	}
 }
 
