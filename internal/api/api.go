@@ -17,6 +17,7 @@ import (
 
 	"shushtls/internal/auth"
 	"shushtls/internal/certengine"
+	"shushtls/internal/request"
 )
 
 // Handler holds the API dependencies and registers routes on a mux.
@@ -756,12 +757,9 @@ Write-Host "Done! ShushTLS root CA is now trusted on this machine."
 
 // baseURL builds the scheme://host prefix from the incoming request,
 // used by install scripts to self-reference the ShushTLS instance.
+// Respects X-Forwarded-Proto and X-Forwarded-Host when behind a reverse proxy.
 func baseURL(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	return scheme + "://" + r.Host
+	return request.BaseURL(r)
 }
 
 // --- Helpers ---

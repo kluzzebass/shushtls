@@ -62,7 +62,7 @@ If you start with an empty state directory, you always get step 1 → 2 → 3 �
 
 Env vars override defaults: `SHUSHTLS_STATE_DIR`, `SHUSHTLS_HTTP_ADDR`, `SHUSHTLS_HTTPS_ADDR`, `SHUSHTLS_SERVICE_HOSTS`, `SHUSHTLS_NO_TLS` (1/true/yes/on).
 
-**Running behind a reverse proxy:** If TLS is terminated at a proxy (Traefik, Caddy, nginx, etc.), use `-no-tls` so ShushTLS serves the app over HTTP only. The proxy handles HTTPS; no built-in HTTPS listener is started.
+**Running behind a reverse proxy:** If TLS is terminated at a proxy (Traefik, Caddy, nginx, etc.), use `-no-tls` so ShushTLS serves the app over HTTP only. The proxy handles HTTPS; no built-in HTTPS listener is started. Ensure the proxy sets `X-Forwarded-Proto: https` (and optionally `X-Forwarded-Host`) so links and install scripts use `https://` in URLs.
 
 ## Certificate model (root vs leaf)
 
@@ -259,6 +259,23 @@ services:
     ports:
       - "8080:8080"
       - "8443:8443"
+    volumes:
+      - shushtls-data:/data/shushtls
+
+volumes:
+  shushtls-data:
+```
+
+**Docker Compose (TLS disabled, behind reverse proxy):**
+
+```yaml
+services:
+  shushtls:
+    image: ghcr.io/kluzzebass/shushtls:latest
+    environment:
+      - SHUSHTLS_NO_TLS=1
+    ports:
+      - "8080:8080"
     volumes:
       - shushtls-data:/data/shushtls
 

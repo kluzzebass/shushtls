@@ -787,6 +787,27 @@ func TestInstallScripts_UseRequestHost(t *testing.T) {
 	}
 }
 
+func TestInstallScripts_XForwardedProto(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	// Behind proxy: X-Forwarded-Proto=https means scripts should use https:// in URLs.
+	req := httptest.NewRequest("GET", "/api/ca/install/macos", nil)
+	req.Host = "shushtls.example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "https://shushtls.example.com") {
+		t.Errorf("script behind proxy should use https://, got: %s", body[:min(200, len(body))])
+	}
+}
+
 // --- Method not allowed ---
 
 func TestInitialize_WrongMethod(t *testing.T) {

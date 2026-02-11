@@ -41,9 +41,9 @@
   <noscript>
     <hr>
     <p>JavaScript is disabled. Use curl to initialize:</p>
-    <pre><code>curl -X POST http://{{.Host}}/api/initialize</code></pre>
+    <pre><code>curl -X POST {{.Scheme}}://{{.Host}}/api/initialize</code></pre>
     <p>Or with custom parameters:</p>
-    <pre><code>curl -X POST http://{{.Host}}/api/initialize \
+    <pre><code>curl -X POST {{.Scheme}}://{{.Host}}/api/initialize \
   -H "Content-Type: application/json" \
   -d '{"organization":"My Lab","common_name":"My Root CA","validity_years":25}'</code></pre>
   </noscript>

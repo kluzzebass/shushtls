@@ -17,6 +17,7 @@ import (
 
 	"shushtls/internal/auth"
 	"shushtls/internal/certengine"
+	"shushtls/internal/request"
 )
 
 //go:embed templates/*.html templates/static/*
@@ -141,13 +142,14 @@ type certInfo struct {
 func (h *Handler) buildPageData(r *http.Request, activeNav string) pageData {
 	state := h.engine.State()
 
-	scheme := requestScheme(r)
+	scheme := request.Scheme(r)
+	host := request.Host(r)
 	pd := pageData{
 		ActiveNav:   activeNav,
 		State:       state.String(),
-		Host:        r.Host,
+		Host:        host,
 		Scheme:      scheme,
-		BaseURL:     scheme + "://" + r.Host,
+		BaseURL:     scheme + "://" + host,
 		AuthEnabled: h.authStore != nil && h.authStore.IsEnabled(),
 		About:       h.about,
 	}
@@ -276,9 +278,3 @@ func fingerprint(cert *x509.Certificate) string {
 	return strings.Join(parts, ":")
 }
 
-func requestScheme(r *http.Request) string {
-	if r.TLS != nil {
-		return "https"
-	}
-	return "http"
-}
