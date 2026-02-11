@@ -145,6 +145,34 @@ func TestTrust_Initialized(t *testing.T) {
 
 // --- Certificates page tests ---
 
+func TestRecipes_Uninitialized(t *testing.T) {
+	h, _ := newTestHandler(t)
+	mux := serveMux(h)
+
+	w := doGet(t, mux, "/recipes")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	assertContains(t, body, "Run Setup first")
+	assertContains(t, body, "Recipes")
+}
+
+func TestRecipes_Ready(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	w := doGet(t, mux, "/recipes")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	assertContains(t, body, "Recipes")
+	assertContains(t, body, "Synology")
+	assertContains(t, body, "Traefik")
+	assertContains(t, body, "Unifi")
+}
+
 func TestCertificates_Uninitialized(t *testing.T) {
 	h, _ := newTestHandler(t)
 	mux := serveMux(h)

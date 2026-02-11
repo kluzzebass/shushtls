@@ -1,0 +1,43 @@
+{{define "title"}}ShushTLS — Recipes{{end}}
+{{define "content"}}
+<h1>Recipes</h1>
+
+<p>
+  Auto-update TLS certificates from ShushTLS on common platforms. Each recipe fetches the cert and key from this instance, installs them on the target, and reloads the service. Issue the certificate first from <a href="/certificates">Certificates</a>, then follow the recipe for your platform.
+</p>
+
+{{if eq .State "uninitialized"}}
+<article>
+  <p><a href="/">Run Setup first</a> to generate the root CA and initialize ShushTLS.</p>
+</article>
+{{else}}
+
+<section id="synology">
+<h2>Synology</h2>
+<article>
+  <header><strong>Auto-update cert on Synology NAS</strong></header>
+  <p>Fetch certificate and key from ShushTLS and install on Synology DSM.</p>
+  <p><em>Recipe content to be added.</em></p>
+</article>
+</section>
+
+<section id="traefik">
+<h2>Traefik</h2>
+<article>
+  <header><strong>Auto-update cert on Traefik</strong></header>
+  <p>Fetch certificate and key from ShushTLS and configure Traefik to use them.</p>
+  <p><em>Recipe content to be added.</em></p>
+</article>
+</section>
+
+<section id="unifi">
+<h2>Unifi</h2>
+<article>
+  <header><strong>Auto-update cert on Unifi</strong></header>
+  <p>Fetch certificate and key from ShushTLS and install on Unifi Controller or gateway.</p>
+  <p><em>Recipe content to be added.</em></p>
+</article>
+</section>
+
+{{end}}
+{{end}}
