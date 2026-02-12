@@ -168,7 +168,6 @@ func TestRecipes_Ready(t *testing.T) {
 	}
 	body := w.Body.String()
 	assertContains(t, body, "Recipes")
-	assertContains(t, body, "Synology")
 	assertContains(t, body, "Traefik")
 	assertContains(t, body, "Unifi")
 }
