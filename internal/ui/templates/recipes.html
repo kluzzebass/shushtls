@@ -63,13 +63,18 @@ trap "rm -rf $TMP" EXIT
 # Fetch cert+key as tar (single request) — separate fetches generate new certs each time, so cert/key would mismatch
 curl $CACERT -fsSL $AUTH -o "$TMP/bundle.tar" "$BASE/api/certificates/$SAN_URL?type=tar"
 tar -x -C "$TMP" -f "$TMP/bundle.tar"
-for f in "$TMP"/*.cert.pem; do [[ -f "$f" ]] && mv "$f" "$TMP/cert.pem" && break; done
-for f in "$TMP"/*.key.pem; do [[ -f "$f" ]] && mv "$f" "$TMP/privkey.pem" && break; done
+for f in "$TMP"/*.cert.pem; do [[ -f "$f" ]] &amp;&amp; mv "$f" "$TMP/cert.pem" &amp;&amp; break; done
+for f in "$TMP"/*.key.pem; do [[ -f "$f" ]] &amp;&amp; mv "$f" "$TMP/privkey.pem" &amp;&amp; break; done
+# Verify cert and key match before deploying (avoids broken nginx)
+CERT_MD5=$(openssl x509 -in "$TMP/cert.pem" -noout -pubkey 2>/dev/null | openssl md5)
+KEY_MD5=$(openssl pkey -in "$TMP/privkey.pem" -pubout 2>/dev/null | openssl md5)
+[[ "$CERT_MD5" != "$KEY_MD5" ]] &amp;&amp; { echo "Error: cert and key do not match. Aborting."; exit 1; }
 curl $CACERT -fsSL -o "$TMP/root.pem" "$BASE/api/ca/root.pem"
 cat "$TMP/cert.pem" "$TMP/root.pem" &gt; "$TMP/fullchain.pem"
 
-# Update default folder only — synow3tool will propagate to other locations
+# Update default folder and www dir (nginx reads from www; synow3tool may not propagate)
 DEFAULT="/usr/syno/etc/certificate/system/default"
+WWW="/usr/syno/etc/www/certificate/system_default"
 cp "$TMP/cert.pem" "$TMP/privkey.pem" "$TMP/fullchain.pem" "$DEFAULT/"
 chown root:root "$DEFAULT"/{cert,privkey,fullchain}.pem
 chmod 600 "$DEFAULT/privkey.pem"
@@ -82,8 +87,21 @@ cp "$TMP/root.pem" "$DEFAULT/short-chain.pem"
 chown root:root "$DEFAULT"/{chain,short-chain}.pem
 chmod 644 "$DEFAULT"/{chain,short-chain}.pem
 
-# synow3tool propagates certs and regenerates nginx config. Restart nginx.
-if ! /usr/syno/bin/synow3tool --gen-all 2>/dev/null || ! /usr/syno/bin/synosystemctl restart nginx 2>/dev/null; then
+# synow3tool first (may overwrite www from _archive)
+/usr/syno/bin/synow3tool --gen-all 2>/dev/null || true
+
+# Copy to www dir AFTER synow3tool (nginx reads from www; synow3tool can overwrite it with stale _archive data)
+if [[ -d "$WWW" ]] &amp;&amp; [[ -f "$WWW/cert.conf" ]]; then
+  for f in $(grep ssl_certificate "$WWW/cert.conf" | grep -v _key | awk '{print $2}' | tr -d ';'); do
+    [[ -n "$f" ]] &amp;&amp; cp "$DEFAULT/cert.pem" "$f" &amp;&amp; chown root:root "$f" &amp;&amp; chmod 644 "$f"
+  done
+  for f in $(grep ssl_certificate_key "$WWW/cert.conf" | awk '{print $2}' | tr -d ';'); do
+    [[ -n "$f" ]] &amp;&amp; cp "$DEFAULT/privkey.pem" "$f" &amp;&amp; chown root:root "$f" &amp;&amp; chmod 600 "$f"
+  done
+fi
+
+# Restart nginx
+if ! /usr/syno/bin/synosystemctl restart nginx 2>/dev/null; then
   echo "Warning: synow3tool or nginx restart failed. Check /var/log/nginx.error and /usr/syno/etc/certificate/ for details."
 fi
 echo "Done. Certificate updated."</code></pre>
