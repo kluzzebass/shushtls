@@ -298,8 +298,15 @@ func (s *Store) CertPaths(primarySAN string) (certPath, keyPath string) {
 }
 
 // certDir returns the on-disk directory for a cert identified by its primary SAN.
+// Panics if the resolved path escapes the certs directory — this is a defense-in-depth
+// check; callers should validate SANs before reaching this point.
 func (s *Store) certDir(primarySAN string) string {
-	return filepath.Join(s.dir, certDirName, SanitizeSAN(primarySAN))
+	dir := filepath.Join(s.dir, certDirName, SanitizeSAN(primarySAN))
+	certsRoot := filepath.Join(s.dir, certDirName) + string(filepath.Separator)
+	if !strings.HasPrefix(dir+string(filepath.Separator), certsRoot) {
+		panic(fmt.Sprintf("path traversal blocked: SAN %q resolved to %q (outside %q)", primarySAN, dir, certsRoot))
+	}
+	return dir
 }
 
 // --- Service host persistence ---
@@ -352,7 +359,25 @@ func (s *Store) LoadLeafSubjectParams() LeafSubjectParams {
 	return p.WithDefaults()
 }
 
-// --- SAN sanitization ---
+// --- SAN sanitization & validation ---
+
+// ValidateSAN checks that a SAN is safe for use as a filesystem path component.
+// Rejects path traversal sequences and other dangerous patterns.
+func ValidateSAN(san string) error {
+	if san == "" {
+		return fmt.Errorf("SAN must not be empty")
+	}
+	if san == "." || san == ".." {
+		return fmt.Errorf("SAN %q is not a valid DNS name", san)
+	}
+	if strings.Contains(san, "..") {
+		return fmt.Errorf("SAN %q contains path traversal sequence", san)
+	}
+	if strings.ContainsAny(san, "/\\") {
+		return fmt.Errorf("SAN %q contains path separator", san)
+	}
+	return nil
+}
 
 // SanitizeSAN converts a SAN into a safe directory name.
 // Replaces * with _wildcard_ to avoid filesystem issues.

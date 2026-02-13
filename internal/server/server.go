@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -232,7 +233,11 @@ func (s *Server) buildMux() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(w, `{"error":"unknown API endpoint: %s %s"}`+"\n", r.Method, r.URL.Path)
+		json.NewEncoder(w).Encode(struct {
+			Error string `json:"error"`
+		}{
+			Error: fmt.Sprintf("unknown API endpoint: %s %s", r.Method, r.URL.Path),
+		})
 	})
 
 	// Register web UI routes.

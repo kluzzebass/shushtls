@@ -21,6 +21,18 @@ import (
 	"shushtls/internal/request"
 )
 
+// maxRequestBody is the maximum allowed request body size (1 MB).
+// Prevents memory exhaustion from oversized payloads.
+const maxRequestBody = 1 << 20
+
+// limitBody wraps a handler to enforce a request body size limit.
+func limitBody(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+		next(w, r)
+	}
+}
+
 // Handler holds the API dependencies and registers routes on a mux.
 type Handler struct {
 	engine       *certengine.Engine
@@ -61,14 +73,14 @@ func NewHandler(engine *certengine.Engine, serviceHosts []string, logger *slog.L
 //   - GET  /api/certificates/{san} or ?type=zip (cert+key zip bundle; auth when enabled)
 //   - GET  /api/ca/install/*
 func (h *Handler) Register(mux *http.ServeMux) {
-	// Protected routes.
+	// Protected routes. POST/PUT handlers use limitBody to cap request size.
 	mux.HandleFunc("GET /api/status", h.requireAuth(h.handleStatus))
-	mux.HandleFunc("POST /api/initialize", h.requireAuth(h.handleInitialize))
-	mux.HandleFunc("POST /api/certificates", h.requireAuth(h.handleIssueCert))
-	mux.HandleFunc("POST /api/service-cert", h.requireAuth(h.handleSetServiceCert))
-	mux.HandleFunc("POST /api/auth", h.requireAuth(h.handleAuth))
+	mux.HandleFunc("POST /api/initialize", h.requireAuth(limitBody(h.handleInitialize)))
+	mux.HandleFunc("POST /api/certificates", h.requireAuth(limitBody(h.handleIssueCert)))
+	mux.HandleFunc("POST /api/service-cert", h.requireAuth(limitBody(h.handleSetServiceCert)))
+	mux.HandleFunc("POST /api/auth", h.requireAuth(limitBody(h.handleAuth)))
 	mux.HandleFunc("GET /api/leaf-subject", h.requireAuth(h.handleGetLeafSubject))
-	mux.HandleFunc("PUT /api/leaf-subject", h.requireAuth(h.handleSetLeafSubject))
+	mux.HandleFunc("PUT /api/leaf-subject", h.requireAuth(limitBody(h.handleSetLeafSubject)))
 
 	// Unprotected routes — cert reads and install scripts.
 	mux.HandleFunc("GET /api/ca/root.pem", h.handleCACert)
@@ -116,9 +128,9 @@ func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 func methodNotAllowed(allowed string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", allowed)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		fmt.Fprintf(w, `{"error":"method %s not allowed, use %s"}`+"\n", r.Method, allowed)
+		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{
+			Error: fmt.Sprintf("method %s not allowed, use %s", r.Method, allowed),
+		})
 	}
 }
 
@@ -333,6 +345,15 @@ func (h *Handler) handleIssueCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	for _, name := range req.DNSNames {
+		if err := certengine.ValidateSAN(name); err != nil {
+			writeJSON(w, http.StatusBadRequest, ErrorResponse{
+				Error: fmt.Sprintf("invalid dns_name: %v", err),
+			})
+			return
+		}
+	}
+
 	item, err := h.engine.IssueCert(req.DNSNames, req.Subject)
 	if err != nil {
 		h.internalError(w, "certificate issuance failed", err)
@@ -360,6 +381,13 @@ func (h *Handler) handleGetCert(w http.ResponseWriter, r *http.Request) {
 	if san == "" {
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{
 			Error: "certificate SAN is required in the URL path",
+		})
+		return
+	}
+
+	if err := certengine.ValidateSAN(san); err != nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{
+			Error: fmt.Sprintf("invalid SAN: %v", err),
 		})
 		return
 	}
@@ -571,6 +599,13 @@ func (h *Handler) handleSetServiceCert(w http.ResponseWriter, r *http.Request) {
 	if req.PrimarySAN == "" {
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{
 			Error: "primary_san is required",
+		})
+		return
+	}
+
+	if err := certengine.ValidateSAN(req.PrimarySAN); err != nil {
+		writeJSON(w, http.StatusBadRequest, ErrorResponse{
+			Error: fmt.Sprintf("invalid primary_san: %v", err),
 		})
 		return
 	}
