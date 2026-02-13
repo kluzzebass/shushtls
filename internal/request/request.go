@@ -8,33 +8,37 @@ import (
 )
 
 // Scheme returns the scheme (http or https) for the request.
-// It checks X-Forwarded-Proto and Forwarded (RFC 7239) so the correct scheme
-// is used when running behind a reverse proxy that terminates TLS.
-func Scheme(r *http.Request) string {
-	// X-Forwarded-Proto: de facto standard, most proxies set this.
-	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-		p := strings.TrimSpace(strings.ToLower(proto))
-		if p == "https" {
-			return "https"
+// When trustProxy is true, it checks X-Forwarded-Proto and Forwarded
+// (RFC 7239) so the correct scheme is used behind a reverse proxy.
+// When trustProxy is false, forwarded headers are ignored to prevent
+// spoofing on direct connections.
+func Scheme(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		// X-Forwarded-Proto: de facto standard, most proxies set this.
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			p := strings.TrimSpace(strings.ToLower(proto))
+			if p == "https" {
+				return "https"
+			}
+			if p == "http" {
+				return "http"
+			}
 		}
-		if p == "http" {
-			return "http"
-		}
-	}
-	// Forwarded (RFC 7239): proto="https" or proto=https
-	if forwarded := r.Header.Get("Forwarded"); forwarded != "" {
-		first := strings.Split(forwarded, ",")[0]
-		for _, part := range strings.Split(first, ";") {
-			part = strings.TrimSpace(strings.ToLower(part))
-			if strings.HasPrefix(part, "proto=") {
-				val := strings.Trim(strings.TrimPrefix(part, "proto="), `"`)
-				if val == "https" {
-					return "https"
+		// Forwarded (RFC 7239): proto="https" or proto=https
+		if forwarded := r.Header.Get("Forwarded"); forwarded != "" {
+			first := strings.Split(forwarded, ",")[0]
+			for _, part := range strings.Split(first, ";") {
+				part = strings.TrimSpace(strings.ToLower(part))
+				if strings.HasPrefix(part, "proto=") {
+					val := strings.Trim(strings.TrimPrefix(part, "proto="), `"`)
+					if val == "https" {
+						return "https"
+					}
+					if val == "http" {
+						return "http"
+					}
+					break
 				}
-				if val == "http" {
-					return "http"
-				}
-				break
 			}
 		}
 	}
@@ -45,22 +49,25 @@ func Scheme(r *http.Request) string {
 	return "http"
 }
 
-// Host returns the host for URL building. Uses X-Forwarded-Host when set
-// (reverse proxy), otherwise r.Host.
-func Host(r *http.Request) string {
-	if h := r.Header.Get("X-Forwarded-Host"); h != "" {
-		return strings.TrimSpace(h)
-	}
-	if forwarded := r.Header.Get("Forwarded"); forwarded != "" {
-		first := strings.Split(forwarded, ",")[0]
-		for _, part := range strings.Split(first, ";") {
-			part = strings.TrimSpace(strings.ToLower(part))
-			if strings.HasPrefix(part, "host=") {
-				val := strings.Trim(strings.TrimPrefix(part, "host="), `"`)
-				if val != "" {
-					return val
+// Host returns the host for URL building. When trustProxy is true, uses
+// X-Forwarded-Host or Forwarded header when set. When trustProxy is false,
+// forwarded headers are ignored.
+func Host(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		if h := r.Header.Get("X-Forwarded-Host"); h != "" {
+			return strings.TrimSpace(h)
+		}
+		if forwarded := r.Header.Get("Forwarded"); forwarded != "" {
+			first := strings.Split(forwarded, ",")[0]
+			for _, part := range strings.Split(first, ";") {
+				part = strings.TrimSpace(strings.ToLower(part))
+				if strings.HasPrefix(part, "host=") {
+					val := strings.Trim(strings.TrimPrefix(part, "host="), `"`)
+					if val != "" {
+						return val
+					}
+					break
 				}
-				break
 			}
 		}
 	}
@@ -68,7 +75,8 @@ func Host(r *http.Request) string {
 }
 
 // BaseURL returns scheme://host for self-referencing URLs (e.g. install scripts).
-// Respects X-Forwarded-Proto, X-Forwarded-Host, and Forwarded headers.
-func BaseURL(r *http.Request) string {
-	return Scheme(r) + "://" + Host(r)
+// When trustProxy is true, respects X-Forwarded-Proto, X-Forwarded-Host, and
+// Forwarded headers. When false, uses only the direct connection info.
+func BaseURL(r *http.Request, trustProxy bool) string {
+	return Scheme(r, trustProxy) + "://" + Host(r, trustProxy)
 }

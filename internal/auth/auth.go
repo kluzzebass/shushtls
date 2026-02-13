@@ -70,6 +70,9 @@ func (s *Store) IsEnabled() bool {
 // Verify checks whether the given username and password match the stored
 // credentials. Returns true if auth is disabled (no credentials to check)
 // or if the credentials are valid.
+//
+// Both the username and password are always checked to prevent timing
+// side-channels from revealing which credential was wrong.
 func (s *Store) Verify(username, password string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -78,11 +81,10 @@ func (s *Store) Verify(username, password string) bool {
 		return true
 	}
 
-	if username != s.creds.Username {
-		return false
-	}
+	usernameMatch := subtle.ConstantTimeCompare([]byte(username), []byte(s.creds.Username)) == 1
+	passwordMatch := verifyArgon2id(s.creds.PasswordHash, password)
 
-	return verifyArgon2id(s.creds.PasswordHash, password)
+	return usernameMatch && passwordMatch
 }
 
 // Enable sets or updates the authentication credentials and persists them.
@@ -143,7 +145,8 @@ func (s *Store) load() error {
 	return nil
 }
 
-// save writes the current credentials to disk atomically.
+// save writes the current credentials to disk atomically via temp-file+rename
+// to prevent corruption from partial writes on crash.
 func (s *Store) save() error {
 	data, err := json.MarshalIndent(s.creds, "", "  ")
 	if err != nil {
@@ -155,7 +158,16 @@ func (s *Store) save() error {
 		return fmt.Errorf("create state dir: %w", err)
 	}
 
-	return os.WriteFile(s.path(), data, 0o600)
+	path := s.path()
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return fmt.Errorf("write %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp) // best-effort cleanup
+		return fmt.Errorf("rename %s -> %s: %w", tmp, path, err)
+	}
+	return nil
 }
 
 // --- Argon2id password hashing ---

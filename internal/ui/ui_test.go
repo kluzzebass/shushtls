@@ -20,7 +20,7 @@ func newTestHandler(t *testing.T) (*Handler, *certengine.Engine) {
 		t.Fatalf("certengine.New: %v", err)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	h, err := NewHandler(engine, nil, logger, AboutInfo{Version: "test"})
+	h, err := NewHandler(engine, nil, logger, AboutInfo{Version: "test"}, false)
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}

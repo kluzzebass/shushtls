@@ -26,7 +26,7 @@ func newTestHandler(t *testing.T) (*Handler, *certengine.Engine) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	hosts := []string{"shushtls.test", "localhost"}
-	h := NewHandler(engine, hosts, logger, nil, nil)
+	h := NewHandler(engine, hosts, logger, nil, nil, false)
 	return h, engine
 }
 
@@ -773,6 +773,7 @@ func TestInstallScripts_UseRequestHost(t *testing.T) {
 
 func TestInstallScripts_XForwardedProto(t *testing.T) {
 	h, _ := newInitializedHandler(t)
+	h.trustProxy = true // simulate running behind a reverse proxy
 	mux := serveMux(h)
 
 	// Behind proxy: X-Forwarded-Proto=https means scripts should use https:// in URLs.
@@ -859,7 +860,7 @@ func newAuthHandler(t *testing.T) (*Handler, *certengine.Engine, *auth.Store) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	hosts := []string{"shushtls.test", "localhost"}
-	h := NewHandler(engine, hosts, logger, nil, authStore)
+	h := NewHandler(engine, hosts, logger, nil, authStore, false)
 	return h, engine, authStore
 }
 

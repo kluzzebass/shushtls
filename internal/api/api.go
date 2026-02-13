@@ -40,19 +40,23 @@ type Handler struct {
 	logger       *slog.Logger
 	onReady      func()      // called when initialization reaches Ready state
 	authStore    *auth.Store // optional; nil disables auth entirely
+	trustProxy   bool        // when true, respect X-Forwarded-* headers
 }
 
 // NewHandler creates an API handler backed by the given engine.
 // The onReady callback is invoked when initialization completes and the
 // engine reaches Ready state. It may be nil.
 // The authStore enables optional Basic Auth; pass nil to disable.
-func NewHandler(engine *certengine.Engine, serviceHosts []string, logger *slog.Logger, onReady func(), authStore *auth.Store) *Handler {
+// trustProxy controls whether X-Forwarded-* headers are respected (enable
+// only when running behind a reverse proxy, e.g. with -no-tls).
+func NewHandler(engine *certengine.Engine, serviceHosts []string, logger *slog.Logger, onReady func(), authStore *auth.Store, trustProxy bool) *Handler {
 	return &Handler{
 		engine:       engine,
 		serviceHosts: serviceHosts,
 		logger:       logger,
 		onReady:      onReady,
 		authStore:    authStore,
+		trustProxy:   trustProxy,
 	}
 }
 
@@ -648,7 +652,7 @@ func (h *Handler) handleInstallIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base := baseURL(r)
+	base := h.baseURL(r)
 	platforms := []InstallPlatform{
 		{
 			Platform: "macOS",
@@ -679,7 +683,7 @@ func (h *Handler) handleInstallMacOS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base := baseURL(r)
+	base := h.baseURL(r)
 	script := fmt.Sprintf(`#!/bin/bash
 # ShushTLS Root CA Installer — macOS
 # Usage: curl -kfsSL %[1]s/api/ca/install/macos | bash
@@ -712,7 +716,7 @@ func (h *Handler) handleInstallLinux(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base := baseURL(r)
+	base := h.baseURL(r)
 	script := fmt.Sprintf(`#!/bin/bash
 # ShushTLS Root CA Installer — Linux
 # Usage: curl -kfsSL %[1]s/api/ca/install/linux | sudo bash
@@ -753,7 +757,7 @@ func (h *Handler) handleInstallWindows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base := baseURL(r)
+	base := h.baseURL(r)
 	script := fmt.Sprintf(`# ShushTLS Root CA Installer — Windows (PowerShell)
 # Usage: irm -SkipCertificateCheck %[1]s/api/ca/install/windows | iex
 # Must be run as Administrator.
@@ -783,9 +787,9 @@ Write-Host "Done! ShushTLS root CA is now trusted on this machine."
 
 // baseURL builds the scheme://host prefix from the incoming request,
 // used by install scripts to self-reference the ShushTLS instance.
-// Respects X-Forwarded-Proto and X-Forwarded-Host when behind a reverse proxy.
-func baseURL(r *http.Request) string {
-	return request.BaseURL(r)
+// Respects X-Forwarded-Proto and X-Forwarded-Host only when trustProxy is set.
+func (h *Handler) baseURL(r *http.Request) string {
+	return request.BaseURL(r, h.trustProxy)
 }
 
 // --- Helpers ---

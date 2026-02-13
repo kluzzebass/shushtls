@@ -225,7 +225,7 @@ func (s *Server) buildMux() (*http.ServeMux, error) {
 	mux := http.NewServeMux()
 
 	// Register API endpoints.
-	apiHandler := api.NewHandler(s.engine, s.config.ServiceHosts, s.logger, s.notifyReady, s.authStore)
+	apiHandler := api.NewHandler(s.engine, s.config.ServiceHosts, s.logger, s.notifyReady, s.authStore, s.config.NoTLS)
 	apiHandler.Register(mux)
 
 	// Catch-all for unmatched /api/ paths — return proper JSON errors
@@ -246,7 +246,7 @@ func (s *Server) buildMux() (*http.ServeMux, error) {
 		RepoURL:   version.RepoURL,
 		Author:    version.Author,
 		Copyright: version.Copyright,
-	})
+	}, s.config.NoTLS)
 	if err != nil {
 		return nil, fmt.Errorf("initialize UI: %w", err)
 	}

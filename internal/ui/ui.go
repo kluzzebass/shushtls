@@ -34,21 +34,24 @@ type AboutInfo struct {
 
 // Handler serves the ShushTLS web UI pages.
 type Handler struct {
-	engine    *certengine.Engine
-	authStore *auth.Store // optional; nil if auth is not available
-	logger    *slog.Logger
-	about     AboutInfo
-	templates map[string]*template.Template
+	engine     *certengine.Engine
+	authStore  *auth.Store // optional; nil if auth is not available
+	logger     *slog.Logger
+	about      AboutInfo
+	trustProxy bool // when true, respect X-Forwarded-* headers
+	templates  map[string]*template.Template
 }
 
 // NewHandler creates a UI handler backed by the given engine.
 // The authStore may be nil to disable auth UI. about is shown in the footer and About page.
-func NewHandler(engine *certengine.Engine, authStore *auth.Store, logger *slog.Logger, about AboutInfo) (*Handler, error) {
+// trustProxy controls whether X-Forwarded-* headers are respected.
+func NewHandler(engine *certengine.Engine, authStore *auth.Store, logger *slog.Logger, about AboutInfo, trustProxy bool) (*Handler, error) {
 	h := &Handler{
-		engine:    engine,
-		authStore: authStore,
-		logger:    logger,
-		about:     about,
+		engine:     engine,
+		authStore:  authStore,
+		logger:     logger,
+		about:      about,
+		trustProxy: trustProxy,
 	}
 	if err := h.loadTemplates(); err != nil {
 		return nil, fmt.Errorf("load templates: %w", err)
@@ -144,8 +147,8 @@ type certInfo struct {
 func (h *Handler) buildPageData(r *http.Request, activeNav string) pageData {
 	state := h.engine.State()
 
-	scheme := request.Scheme(r)
-	host := request.Host(r)
+	scheme := request.Scheme(r, h.trustProxy)
+	host := request.Host(r, h.trustProxy)
 	pd := pageData{
 		ActiveNav:   activeNav,
 		State:       state.String(),
