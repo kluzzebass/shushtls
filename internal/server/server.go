@@ -187,7 +187,7 @@ func (s *Server) startHTTPS(handler http.Handler, errCh chan<- error) (*http.Ser
 		Handler: handler,
 		TLSConfig: &tls.Config{
 			GetCertificate: s.getCertificate,
-			MinVersion:     tls.VersionTLS12,
+			MinVersion:     tls.VersionTLS13,
 		},
 		ReadHeaderTimeout: 10 * time.Second,
 	}

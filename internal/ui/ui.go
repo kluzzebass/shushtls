@@ -105,6 +105,8 @@ func (h *Handler) render(w http.ResponseWriter, page string, data any) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
 	if err := tmpl.ExecuteTemplate(w, "layout", data); err != nil {
 		h.logger.Error("template render failed", "page", page, "error", err)
 	}

@@ -117,6 +117,7 @@ func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 
 		username, password, ok := r.BasicAuth()
 		if !ok || !h.authStore.Verify(username, password) {
+			h.logger.Warn("authentication failed", "remote", r.RemoteAddr, "path", r.URL.Path)
 			w.Header().Set("WWW-Authenticate", `Basic realm="ShushTLS"`)
 			writeJSON(w, http.StatusUnauthorized, ErrorResponse{
 				Error: "authentication required",
@@ -419,6 +420,7 @@ func (h *Handler) handleGetCert(w http.ResponseWriter, r *http.Request) {
 	if h.authStore != nil && h.authStore.IsEnabled() {
 		username, password, ok := r.BasicAuth()
 		if !ok || !h.authStore.Verify(username, password) {
+			h.logger.Warn("authentication failed", "remote", r.RemoteAddr, "path", r.URL.Path)
 			w.Header().Set("WWW-Authenticate", `Basic realm="ShushTLS"`)
 			writeJSON(w, http.StatusUnauthorized, ErrorResponse{
 				Error: "authentication required for certificate bundle download",
