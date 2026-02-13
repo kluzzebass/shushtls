@@ -12,7 +12,7 @@ A small, local-first PKI for your home or lab: run it on one machine, issue TLS 
 
 ## Quick start
 
-**macOS (Homebrew):**
+**macOS / Linux (Homebrew):**
 
 ```bash
 brew install kluzzebass/tap/shushtls

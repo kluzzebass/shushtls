@@ -62,13 +62,17 @@ jobs:
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
           VERSION_NUM=${VERSION#v}
-          SHA256_X86=$(grep "shushtls-darwin-amd64" dist/checksums.txt | cut -d' ' -f1)
-          SHA256_ARM=$(grep "shushtls-darwin-arm64" dist/checksums.txt | cut -d' ' -f1)
+          SHA256_DARWIN_X86=$(grep "shushtls-darwin-amd64" dist/checksums.txt | cut -d' ' -f1)
+          SHA256_DARWIN_ARM=$(grep "shushtls-darwin-arm64" dist/checksums.txt | cut -d' ' -f1)
+          SHA256_LINUX_X86=$(grep "shushtls-linux-amd64" dist/checksums.txt | cut -d' ' -f1)
+          SHA256_LINUX_ARM=$(grep "shushtls-linux-arm64" dist/checksums.txt | cut -d' ' -f1)
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "version_number=$VERSION_NUM" >> $GITHUB_OUTPUT
-          echo "sha256_x86=$SHA256_X86" >> $GITHUB_OUTPUT
-          echo "sha256_arm=$SHA256_ARM" >> $GITHUB_OUTPUT
+          echo "sha256_darwin_x86=$SHA256_DARWIN_X86" >> $GITHUB_OUTPUT
+          echo "sha256_darwin_arm=$SHA256_DARWIN_ARM" >> $GITHUB_OUTPUT
+          echo "sha256_linux_x86=$SHA256_LINUX_X86" >> $GITHUB_OUTPUT
+          echo "sha256_linux_arm=$SHA256_LINUX_ARM" >> $GITHUB_OUTPUT
 
       - name: Checkout homebrew-tap
         uses: actions/checkout@v4
@@ -81,8 +85,10 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
           VERSION_NUM: ${{ steps.version.outputs.version_number }}
-          SHA256_X86: ${{ steps.version.outputs.sha256_x86 }}
-          SHA256_ARM: ${{ steps.version.outputs.sha256_arm }}
+          SHA256_DARWIN_X86: ${{ steps.version.outputs.sha256_darwin_x86 }}
+          SHA256_DARWIN_ARM: ${{ steps.version.outputs.sha256_darwin_arm }}
+          SHA256_LINUX_X86: ${{ steps.version.outputs.sha256_linux_x86 }}
+          SHA256_LINUX_ARM: ${{ steps.version.outputs.sha256_linux_arm }}
         run: |
           cd homebrew-tap
           cat > shushtls.rb << 'FORMULA'
@@ -95,12 +101,24 @@ jobs:
             on_macos do
               on_intel do
                 url "https://github.com/kluzzebass/shushtls/releases/download/VERSION/shushtls-darwin-amd64"
-                sha256 "SHA256_X86"
+                sha256 "SHA256_DARWIN_X86"
               end
 
               on_arm do
                 url "https://github.com/kluzzebass/shushtls/releases/download/VERSION/shushtls-darwin-arm64"
-                sha256 "SHA256_ARM"
+                sha256 "SHA256_DARWIN_ARM"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/kluzzebass/shushtls/releases/download/VERSION/shushtls-linux-amd64"
+                sha256 "SHA256_LINUX_X86"
+              end
+
+              on_arm do
+                url "https://github.com/kluzzebass/shushtls/releases/download/VERSION/shushtls-linux-arm64"
+                sha256 "SHA256_LINUX_ARM"
               end
             end
 
@@ -115,8 +133,10 @@ jobs:
           FORMULA
           sed -i "s/VERSION_NUM/$VERSION_NUM/g" shushtls.rb
           sed -i "s/VERSION/$VERSION/g" shushtls.rb
-          sed -i "s/SHA256_X86/$SHA256_X86/g" shushtls.rb
-          sed -i "s/SHA256_ARM/$SHA256_ARM/g" shushtls.rb
+          sed -i "s/SHA256_DARWIN_X86/$SHA256_DARWIN_X86/g" shushtls.rb
+          sed -i "s/SHA256_DARWIN_ARM/$SHA256_DARWIN_ARM/g" shushtls.rb
+          sed -i "s/SHA256_LINUX_X86/$SHA256_LINUX_X86/g" shushtls.rb
+          sed -i "s/SHA256_LINUX_ARM/$SHA256_LINUX_ARM/g" shushtls.rb
 
       - name: Commit and push Homebrew formula
         run: |
