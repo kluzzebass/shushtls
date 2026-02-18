@@ -285,6 +285,11 @@ Then: `docker compose up -d`. Replace `latest` with a release tag (e.g. `0.0.1`)
 
 The container listens on `0.0.0.0:8080` (HTTP) and `0.0.0.0:8443` (HTTPS). Use `-state-dir /data/shushtls` if you override the entrypoint; the default CMD already points there. **Always use a named or bind volume for `/data/shushtls`** so certs are not lost on `docker pull` and re-create. Env vars override flag defaults: `SHUSHTLS_STATE_DIR`, `SHUSHTLS_HTTP_ADDR`, `SHUSHTLS_HTTPS_ADDR`, `SHUSHTLS_SERVICE_HOSTS` (comma-separated), `SHUSHTLS_NO_TLS` (1/true/yes/on to disable HTTPS). For reverse-proxy deployments, set `SHUSHTLS_NO_TLS=1`.
 
+## FAQ (frequently anticipated questions)
+
+**Q: What about &lt;insert feature&gt;?**  
+A: If you're missing &lt;insert feature&gt;, you're probably looking at the wrong tool.
+
 ## Maintenance
 
 For whoever returns to this system after a long time.
