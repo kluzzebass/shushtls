@@ -180,6 +180,17 @@ tar -x -f bundle.tar
 - **GET /api/leaf-subject** — JSON: default subject params (O, OU, C, L, ST) for leaf certs. Protected when auth is on.
 - **PUT /api/leaf-subject** — Update default subject. Body: `{"organization": "My Org", "organizational_unit": "IT", "country": "US", "locality": "City", "province": "ST"}` (all optional). Protected when auth is on.
 
+### ACME (RFC 8555)
+
+ShushTLS acts as an ACME server so clients like certbot or acme.sh can obtain and renew certificates automatically. The ACME directory is at `GET /acme/directory`. Challenges are not validated—the server responds positively to all challenges. Use this for automation when you control the network and trust is established by installing the root CA.
+
+```bash
+# ACME directory (discover endpoints)
+curl -sS https://shushtls.local:8443/acme/directory | jq .
+```
+
+Configure your ACME client with the directory URL: `https://<your-shushtls-host>:8443/acme/directory`. Ensure the ShushTLS root CA is installed on the client so it trusts the server.
+
 ## Certificate subject defaults
 
 After initialization, you can set default subject fields (Organization, OU, Country, Locality, State/Province) for issued leaf certificates in **Settings**. The common name (CN) is always the primary hostname. These defaults apply to all newly issued and on-demand certificates.

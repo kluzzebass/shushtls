@@ -1,7 +1,11 @@
 package certengine
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"os"
 	"path/filepath"
 	"testing"
@@ -784,6 +788,50 @@ func TestDesignateServiceCert_Persists(t *testing.T) {
 	}
 	if e2.State() != Ready {
 		t.Errorf("reloaded state = %s, want ready", e2.State())
+	}
+}
+
+// --- SignCSR (ACME) ---
+
+func TestCACert_SignCSR(t *testing.T) {
+	e := initEngine(t)
+	ca := e.CA()
+	if ca == nil {
+		t.Fatal("CA is nil")
+	}
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+	csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
+		Subject:  pkix.Name{CommonName: "test.example.com"},
+		DNSNames: []string{"test.example.com", "www.test.example.com"},
+	}, key)
+	if err != nil {
+		t.Fatalf("CreateCertificateRequest: %v", err)
+	}
+	csr, err := x509.ParseCertificateRequest(csrDER)
+	if err != nil {
+		t.Fatalf("ParseCertificateRequest: %v", err)
+	}
+
+	certDER, err := ca.SignCSR(csr)
+	if err != nil {
+		t.Fatalf("SignCSR: %v", err)
+	}
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		t.Fatalf("ParseCertificate: %v", err)
+	}
+	if cert.Subject.CommonName != "test.example.com" {
+		t.Errorf("CN = %q, want test.example.com", cert.Subject.CommonName)
+	}
+	if len(cert.DNSNames) != 2 {
+		t.Errorf("DNSNames len = %d, want 2", len(cert.DNSNames))
+	}
+	if err := cert.CheckSignatureFrom(ca.Cert); err != nil {
+		t.Errorf("cert not signed by CA: %v", err)
 	}
 }
 

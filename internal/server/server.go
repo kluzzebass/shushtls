@@ -14,9 +14,11 @@ import (
 	"syscall"
 	"time"
 
+	"shushtls/internal/acme"
 	"shushtls/internal/api"
 	"shushtls/internal/auth"
 	"shushtls/internal/certengine"
+	"shushtls/internal/request"
 	"shushtls/internal/ui"
 	"shushtls/internal/version"
 )
@@ -227,6 +229,12 @@ func (s *Server) buildMux() (*http.ServeMux, error) {
 	// Register API endpoints.
 	apiHandler := api.NewHandler(s.engine, s.config.ServiceHosts, s.logger, s.notifyReady, s.authStore, s.config.NoTLS)
 	apiHandler.Register(mux)
+
+	// ACME server (RFC 8555) — challenges not validated, always succeed
+	acmeServer := acme.NewServer(s.engine, func(r *http.Request) string {
+		return request.BaseURL(r, s.config.NoTLS)
+	}, s.logger)
+	acmeServer.Register(mux)
 
 	// Catch-all for unmatched /api/ paths — return proper JSON errors
 	// instead of letting them fall through to the UI handler.
