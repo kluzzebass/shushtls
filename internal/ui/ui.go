@@ -65,6 +65,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /setup", h.handleSetup)
 	mux.HandleFunc("GET /trust", h.handleTrust)
 	mux.HandleFunc("GET /certificates", h.handleCertificates)
+	mux.HandleFunc("GET /acme", h.handleAcme)
 	mux.HandleFunc("GET /docs", h.handleDocs)
 	mux.HandleFunc("GET /settings", h.requireAuth(h.handleSettings))
 	mux.HandleFunc("GET /about", h.handleAbout)
@@ -80,7 +81,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 // template sets. Each page overrides the "title" and "content" blocks
 // defined in the layout.
 func (h *Handler) loadTemplates() error {
-	pages := []string{"setup", "trust", "certificates", "docs", "settings", "about"}
+	pages := []string{"setup", "trust", "certificates", "acme", "docs", "settings", "about"}
 	h.templates = make(map[string]*template.Template, len(pages))
 
 	for _, page := range pages {
@@ -225,6 +226,11 @@ func (h *Handler) handleTrust(w http.ResponseWriter, r *http.Request) {
 // GET /certificates
 func (h *Handler) handleCertificates(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "certificates", h.buildPageData(r, "certificates"))
+}
+
+// GET /acme
+func (h *Handler) handleAcme(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "acme", h.buildPageData(r, "acme"))
 }
 
 // GET /docs

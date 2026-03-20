@@ -53,7 +53,7 @@
 <p>ShushTLS intentionally does <strong>not</strong> do the following. These are conscious limits, not missing features.</p>
 <ul>
   <li><strong>No public trust.</strong> The root CA is for your network only. You explicitly install it on each device. That keeps the model simple and keeps you in control.</li>
-  <li><strong>No short-lived certs / automatic rotation.</strong> Certificates are issued with validity that meets current browser rules (see <a href="#cert-model">Certificate longevity</a> above). There is no built-in ACME, no auto-renewal. You re-issue when needed.</li>
+  <li><strong>No short-lived certs / automatic rotation.</strong> Certificates are issued with validity that meets current browser rules (see <a href="#cert-model">Certificate longevity</a> above). For automation, use the built-in <a href="/acme">ACME server</a> with acme.sh or certbot.</li>
   <li><strong>No revocation.</strong> There is no CRL or OCSP. If you need to revoke a cert, stop using it and re-issue a new one for that name if necessary.</li>
   <li><strong>No auth by default.</strong> The UI and API are open on the LAN. Optional HTTP Basic Auth can be enabled in <a href="/settings">Settings</a>.</li>
   <li><strong>No HA / clustering.</strong> One instance, one state directory. Running a second instance against the same state dir will conflict (e.g. port already in use).</li>

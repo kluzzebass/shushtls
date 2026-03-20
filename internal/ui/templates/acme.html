@@ -1,0 +1,42 @@
+{{define "title"}}ShushTLS — ACME{{end}}
+{{define "content"}}
+<h1>ACME</h1>
+
+{{if eq .State "uninitialized"}}
+<article>
+  <p>ACME is available after setup. <a href="/">Initialize ShushTLS first</a>.</p>
+</article>
+{{else}}
+
+<p>
+  ShushTLS acts as an <strong>ACME server</strong> (RFC 8555) so clients like <a href="https://github.com/acmesh-official/acme.sh">acme.sh</a> or <a href="https://certbot.eff.org/">certbot</a> can obtain and renew certificates automatically. Challenges are not validated—the server responds positively to all challenges. Use this for automation when you control the network and trust is established by installing the <a href="/trust">root CA</a>.
+</p>
+
+<h2>Directory URL</h2>
+<p>Configure your ACME client with this directory URL:</p>
+<article>
+  <pre><code>{{.BaseURL}}/acme/directory</code></pre>
+</article>
+
+<h2>acme.sh</h2>
+<article>
+  <header><strong>Issue a certificate</strong></header>
+  <pre><code>acme.sh --issue -d example.local -w /var/www/html \
+  --server {{.BaseURL}}/acme/directory</code></pre>
+  <p>Use <code>-w /path/to/webroot</code> for webroot mode, or <code>--standalone</code> for local testing (requires socat). If the ShushTLS root CA is not installed on the client, add <code>--insecure</code> to skip TLS verification.</p>
+</article>
+
+<h2>certbot</h2>
+<article>
+  <header><strong>Issue a certificate</strong></header>
+  <pre><code>certbot certonly --webroot -w /var/www/html -d example.local \
+  --server {{.BaseURL}}/acme/directory</code></pre>
+  <p>Ensure the ShushTLS root CA is installed on the client, or certbot will reject the connection.</p>
+</article>
+
+<h2>Discovery</h2>
+<p>To inspect the ACME directory:</p>
+<pre><code>curl -sS {{.BaseURL}}/acme/directory | jq .</code></pre>
+
+{{end}}
+{{end}}
