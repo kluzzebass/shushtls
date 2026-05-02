@@ -43,6 +43,16 @@ func TestACME_Directory(t *testing.T) {
 	}
 }
 
+func TestRandomID_FixedLength(t *testing.T) {
+	srv := &Server{}
+	for range 100000 {
+		id := srv.randomID()
+		if got := len(id); got != 22 {
+			t.Fatalf("randomID len = %d, want 22 (id=%q)", got, id)
+		}
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a

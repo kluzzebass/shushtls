@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
-	"math/big"
 	"net/http"
 )
 
@@ -16,8 +15,9 @@ func (s *Server) newNonce() string {
 }
 
 func (s *Server) randomID() string {
-	n, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	return base64.RawURLEncoding.EncodeToString(n.Bytes())[:22]
+	b := make([]byte, 16)
+	rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 func pemEncodeCert(der []byte) []byte {
