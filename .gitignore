@@ -14,3 +14,6 @@
 
 # ShushTLS state (runtime data, never commit)
 /state/
+
+# dcat lock file
+.dogcats/.issues.lock
