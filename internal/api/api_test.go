@@ -616,6 +616,28 @@ func TestLeafSubject_PutUninitialized(t *testing.T) {
 
 // --- Error response format ---
 
+func TestUnknownAPIEndpoint_ProblemJSON(t *testing.T) {
+	h, _ := newTestHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "GET", "/api/no-such-route", "")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", w.Code)
+	}
+
+	ct := w.Header().Get("Content-Type")
+	if !strings.Contains(ct, "application/problem+json") {
+		t.Errorf("Content-Type = %q, want application/problem+json", ct)
+	}
+
+	resp := decodeJSON[struct {
+		Detail string `json:"detail"`
+	}](t, w)
+	if !strings.Contains(resp.Detail, "unknown API endpoint") {
+		t.Errorf("detail = %q, want mention of unknown API endpoint", resp.Detail)
+	}
+}
+
 func TestErrorResponse_IsProblemJSON(t *testing.T) {
 	h, _ := newTestHandler(t)
 	mux := serveMux(h)

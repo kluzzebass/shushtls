@@ -1,6 +1,5 @@
-// Package api implements the ShushTLS HTTP API. All endpoints are JSON
-// where applicable, idempotent where reasonable, and scriptable via curl.
-// No authentication — ShushTLS uses a LAN trust model.
+// Package api implements the ShushTLS HTTP API (Huma). JSON where applicable,
+// idempotent where reasonable, and scriptable via curl. Optional HTTP Basic Auth.
 package api
 
 import (
@@ -63,7 +62,8 @@ func NewHandler(engine *certengine.Engine, serviceHosts []string, logger *slog.L
 //   - GET  /api/certificates/{san} or ?type=zip (cert+key zip bundle; auth when enabled)
 //   - GET  /api/ca/install/*
 func (h *Handler) Register(mux *http.ServeMux) {
-	h.RegisterAPI(mux)
+	api := h.RegisterAPI(mux)
+	registerAPINotFound(mux, api)
 }
 
 // --- Response types ---

@@ -100,6 +100,10 @@ ShushTLS intentionally does **not** do the following. These are conscious limits
 
 As certificate validity periods get shorter (see [Certificate longevity](#certificate-longevity-leaf-certs)), automating issuance and fetch is important. All certificate operations are available over HTTP/HTTPS with JSON where applicable. Use the same base URL as the web UI (e.g. `https://shushtls.local:8443`). If you enabled auth in Settings, use HTTP Basic Auth for protected endpoints.
 
+**OpenAPI:** `GET /api/openapi.json` (machine-readable contract for all `/api/*` routes). Interactive explorer: `GET /api/docs`. Human-oriented guide: `GET /docs` (links to the spec). ACME automation uses `GET /acme/directory` (RFC 8555), referenced from the OpenAPI `externalDocs` field.
+
+**Errors:** RFC 9457 `application/problem+json` (`title`, `status`, `detail`). Example: `404` with `"detail": "root CA does not exist yet — run POST /api/initialize first"`.
+
 ### Certificate endpoints
 
 | Method | Path | Auth | Description |
@@ -152,7 +156,7 @@ Success (200) response:
 }
 ```
 
-Errors: 400 (invalid body or empty `dns_names`), 409 (not initialized), 500 (issuance failed). Body: `{"error": "message"}`.
+Errors: 400 (invalid body or empty `dns_names`), 409 (not initialized), 500 (issuance failed). Body: RFC 9457 problem+json (`title`, `status`, `detail`).
 
 ### Example: fetch or issue then download cert + key
 

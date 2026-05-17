@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -235,18 +234,6 @@ func (s *Server) buildMux() (*http.ServeMux, error) {
 		return request.BaseURL(r, s.config.NoTLS)
 	}, s.logger)
 	acmeServer.Register(mux)
-
-	// Catch-all for unmatched /api/ paths — return proper JSON errors
-	// instead of letting them fall through to the UI handler.
-	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(struct {
-			Error string `json:"error"`
-		}{
-			Error: fmt.Sprintf("unknown API endpoint: %s %s", r.Method, r.URL.Path),
-		})
-	})
 
 	// Register web UI routes.
 	uiHandler, err := ui.NewHandler(s.engine, s.authStore, s.logger, ui.AboutInfo{
