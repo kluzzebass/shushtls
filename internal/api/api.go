@@ -77,8 +77,12 @@ func NewHandler(engine *certengine.Engine, serviceHosts []string, logger *slog.L
 //   - GET  /api/certificates/{san} or ?type=zip (cert+key zip bundle; auth when enabled)
 //   - GET  /api/ca/install/*
 func (h *Handler) Register(mux *http.ServeMux) {
+	h.RegisterAPI(mux)
+	h.registerLegacy(mux)
+}
+
+func (h *Handler) registerLegacy(mux *http.ServeMux) {
 	// Protected routes. POST/PUT handlers use limitBody to cap request size.
-	mux.HandleFunc("GET /api/status", h.requireAuth(h.handleStatus))
 	mux.HandleFunc("POST /api/initialize", h.requireAuth(limitBody(h.handleInitialize)))
 	mux.HandleFunc("POST /api/certificates", h.requireAuth(limitBody(h.handleIssueCert)))
 	mux.HandleFunc("POST /api/service-cert", h.requireAuth(limitBody(h.handleSetServiceCert)))
@@ -223,28 +227,6 @@ type ErrorResponse struct {
 }
 
 // --- Handlers ---
-
-// GET /api/status
-func (h *Handler) handleStatus(w http.ResponseWriter, r *http.Request) {
-	state := h.engine.State()
-
-	resp := StatusResponse{
-		State:       state.String(),
-		ServingMode: servingMode(state),
-	}
-
-	if ca := h.engine.CA(); ca != nil {
-		resp.RootCA = certInfo(ca.Cert)
-	}
-
-	for _, item := range h.engine.ListCerts() {
-		info := leafInfoFromItem(item)
-		info.IsService = item.PrimarySAN == h.engine.ServiceHost()
-		resp.Certs = append(resp.Certs, info)
-	}
-
-	writeJSON(w, http.StatusOK, resp)
-}
 
 // POST /api/initialize
 func (h *Handler) handleInitialize(w http.ResponseWriter, r *http.Request) {
