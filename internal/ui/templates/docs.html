@@ -70,6 +70,7 @@
 <section id="api">
 <h2>API for automation</h2>
 <p>As certificate validity gets shorter, automating issuance and download matters. Use the same base URL as this UI. If auth is enabled, use HTTP Basic Auth for protected endpoints.</p>
+<p><strong>Machine-readable API contract:</strong> <a href="/api/openapi.json"><code>/api/openapi.json</code></a> (OpenAPI 3.x). Interactive explorer: <a href="/api/docs"><code>/api/docs</code></a>. Certificate automation via ACME uses a separate protocol: <a href="/acme">ACME server</a> (<code>/acme/directory</code>), also linked from the OpenAPI <code>externalDocs</code> field.</p>
 
 <h3>Certificate endpoints</h3>
 <table>
@@ -101,7 +102,7 @@ curl -sS -X POST "$BASE/api/certificates" \
 # Use type=tar for systems without unzip (e.g. Synology)
 curl -sS -o bundle.tar -u user:pass "$BASE/api/certificates/$SAN?type=tar"
 tar -x -f bundle.tar</code></pre>
-<p>Errors are JSON: <code>{"error": "message"}</code>. 400 = bad request, 409 = not initialized, 401 = auth required.</p>
+<p>Errors use RFC 9457 <code>application/problem+json</code> (<code>title</code>, <code>status</code>, <code>detail</code>). Common statuses: 400 bad request, 401 auth required, 404 not found, 409 not initialized.</p>
 </section>
 
 <section id="maintenance">

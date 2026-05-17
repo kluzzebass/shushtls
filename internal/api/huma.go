@@ -23,8 +23,32 @@ func (h *Handler) RegisterAPI(mux *http.ServeMux) huma.API {
 	h.registerHumaStatus(api)
 	h.registerHumaJSON(api)
 	h.registerHumaBinary(api)
+	configureOpenAPI(api)
 
 	return api
+}
+
+// configureOpenAPI adds metadata not expressible per-operation (ACME link, auth scheme).
+func configureOpenAPI(api huma.API) {
+	spec := api.OpenAPI()
+	spec.Info.Description = "LAN-trust private CA and certificate management. " +
+		"Optional HTTP Basic Auth when enabled in Settings."
+
+	spec.ExternalDocs = &huma.ExternalDocs{
+		Description: "ACME directory (RFC 8555) for certbot, acme.sh, and similar clients",
+		URL:         "/acme/directory",
+	}
+
+	if spec.Components == nil {
+		spec.Components = &huma.Components{}
+	}
+	spec.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
+		"basicAuth": {
+			Type:        "http",
+			Scheme:      "basic",
+			Description: "HTTP Basic authentication (realm ShushTLS). Required only when auth is enabled.",
+		},
+	}
 }
 
 func (h *Handler) registerHumaStatus(api huma.API) {
