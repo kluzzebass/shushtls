@@ -31,8 +31,15 @@ func TestRegisterAPI_OpenAPI(t *testing.T) {
 	if doc.Info.Title != "ShushTLS API" {
 		t.Errorf("title = %q, want ShushTLS API", doc.Info.Title)
 	}
-	if doc.Paths["/api/status"] == nil {
-		t.Error("paths missing /api/status")
+	for _, path := range []string{
+		"/api/status",
+		"/api/initialize",
+		"/api/certificates",
+		"/api/leaf-subject",
+	} {
+		if doc.Paths[path] == nil {
+			t.Errorf("paths missing %s", path)
+		}
 	}
 }
 

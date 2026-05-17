@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -82,32 +81,22 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 func (h *Handler) registerLegacy(mux *http.ServeMux) {
-	// Protected routes. POST/PUT handlers use limitBody to cap request size.
-	mux.HandleFunc("POST /api/initialize", h.requireAuth(limitBody(h.handleInitialize)))
-	mux.HandleFunc("POST /api/certificates", h.requireAuth(limitBody(h.handleIssueCert)))
-	mux.HandleFunc("POST /api/service-cert", h.requireAuth(limitBody(h.handleSetServiceCert)))
-	mux.HandleFunc("POST /api/auth", h.requireAuth(limitBody(h.handleAuth)))
-	mux.HandleFunc("GET /api/leaf-subject", h.requireAuth(h.handleGetLeafSubject))
-	mux.HandleFunc("PUT /api/leaf-subject", h.requireAuth(limitBody(h.handleSetLeafSubject)))
-
-	// Unprotected routes — cert reads and install scripts.
+	// Binary and script routes — migrated to Huma in shushtls-21bw.
 	mux.HandleFunc("GET /api/ca/root.pem", h.handleCACert)
-	mux.HandleFunc("GET /api/certificates", h.handleListCerts)
 	mux.HandleFunc("GET /api/certificates/", h.handleGetCert) // auth checked inside for zip bundle
-	mux.HandleFunc("GET /api/ca/install", h.handleInstallIndex)
 	mux.HandleFunc("GET /api/ca/install/macos", h.handleInstallMacOS)
 	mux.HandleFunc("GET /api/ca/install/linux", h.handleInstallLinux)
 	mux.HandleFunc("GET /api/ca/install/windows", h.handleInstallWindows)
 
-	// Method-not-allowed handlers for routes that only accept specific methods.
-	// Without these, wrong-method requests fall through to the /api/ catch-all
-	// and return 404 instead of 405.
+	// Wrong-method handlers for Huma routes (Huma only registers allowed methods).
 	mux.HandleFunc("/api/initialize", methodNotAllowed("POST"))
 	mux.HandleFunc("/api/service-cert", methodNotAllowed("POST"))
 	mux.HandleFunc("/api/status", methodNotAllowed("GET"))
-	mux.HandleFunc("/api/ca/root.pem", methodNotAllowed("GET"))
 	mux.HandleFunc("/api/auth", methodNotAllowed("POST"))
 	mux.HandleFunc("/api/leaf-subject", methodNotAllowed("GET, PUT"))
+
+	// Method-not-allowed handlers for legacy routes still on the mux.
+	mux.HandleFunc("/api/ca/root.pem", methodNotAllowed("GET"))
 }
 
 // requireAuth wraps a handler with Basic Auth checking. If the auth store
@@ -199,7 +188,7 @@ type IssueCertResponse struct {
 
 // AuthRequest is the JSON body for POST /api/auth.
 type AuthRequest struct {
-	Enabled  *bool  `json:"enabled"`  // pointer to distinguish false from omitted
+	Enabled  *bool  `json:"enabled" required:"false"` // pointer to distinguish false from omitted
 	Username string `json:"username,omitempty"`
 	Password string `json:"password,omitempty"`
 }
@@ -228,52 +217,6 @@ type ErrorResponse struct {
 
 // --- Handlers ---
 
-// POST /api/initialize
-func (h *Handler) handleInitialize(w http.ResponseWriter, r *http.Request) {
-	// Parse optional CA params from the request body.
-	// An empty body is fine — all fields default to sensible values.
-	var caParams certengine.CAParams
-	if r.Body != nil {
-		body, _ := io.ReadAll(r.Body)
-		if len(body) > 0 {
-			if err := json.Unmarshal(body, &caParams); err != nil {
-				writeJSON(w, http.StatusBadRequest, ErrorResponse{
-					Error: fmt.Sprintf("invalid request body: %v", err),
-				})
-				return
-			}
-		}
-	}
-
-	state, err := h.engine.Initialize(h.serviceHosts, caParams)
-	if err != nil {
-		h.internalError(w, "initialization failed", err)
-		return
-	}
-
-	var msg string
-	switch state {
-	case certengine.Ready:
-		msg = "Initialization complete. HTTPS is now active. Download the root CA and install it on your devices."
-	case certengine.Initialized:
-		msg = "Root CA generated. Service certificate pending."
-	default:
-		msg = "Unexpected state after initialization."
-	}
-
-	h.logger.Info("initialization complete", "state", state.String())
-
-	// Notify the server that HTTPS can be activated.
-	if state == certengine.Ready && h.onReady != nil {
-		h.onReady()
-	}
-
-	writeJSON(w, http.StatusOK, InitializeResponse{
-		State:   state.String(),
-		Message: msg,
-	})
-}
-
 // GET /api/ca/root.pem
 func (h *Handler) handleCACert(w http.ResponseWriter, r *http.Request) {
 	ca := h.engine.CA()
@@ -292,69 +235,6 @@ func (h *Handler) handleCACert(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-pem-file")
 	w.Header().Set("Content-Disposition", "attachment; filename=\"shushtls-root-ca.pem\"")
 	w.Write(pemBlock)
-}
-
-// GET /api/certificates
-func (h *Handler) handleListCerts(w http.ResponseWriter, r *http.Request) {
-	items := h.engine.ListCerts()
-
-	var infos []LeafCertInfo
-	for _, item := range items {
-		info := leafInfoFromItem(item)
-		info.IsService = item.PrimarySAN == h.engine.ServiceHost()
-		infos = append(infos, info)
-	}
-
-	writeJSON(w, http.StatusOK, infos)
-}
-
-// POST /api/certificates
-func (h *Handler) handleIssueCert(w http.ResponseWriter, r *http.Request) {
-	if h.engine.CA() == nil {
-		writeJSON(w, http.StatusConflict, ErrorResponse{
-			Error: "root CA does not exist — run POST /api/initialize first",
-		})
-		return
-	}
-
-	var req IssueCertRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{
-			Error: fmt.Sprintf("invalid request body: %v", err),
-		})
-		return
-	}
-
-	if len(req.DNSNames) == 0 {
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{
-			Error: "dns_names must contain at least one entry",
-		})
-		return
-	}
-
-	for _, name := range req.DNSNames {
-		if err := certengine.ValidateSAN(name); err != nil {
-			writeJSON(w, http.StatusBadRequest, ErrorResponse{
-				Error: fmt.Sprintf("invalid dns_name: %v", err),
-			})
-			return
-		}
-	}
-
-	item, err := h.engine.IssueCert(req.DNSNames, req.Subject)
-	if err != nil {
-		h.internalError(w, "certificate issuance failed", err)
-		return
-	}
-
-	info := leafInfoFromItem(item)
-	info.IsService = item.PrimarySAN == h.engine.ServiceHost()
-
-	h.logger.Info("certificate issued", "primarySAN", item.PrimarySAN)
-	writeJSON(w, http.StatusOK, IssueCertResponse{
-		Cert:    info,
-		Message: "Certificate issued successfully.",
-	})
 }
 
 // GET /api/certificates/{san}
@@ -476,148 +356,6 @@ func (h *Handler) handleGetCert(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// POST /api/auth — enable or disable authentication.
-func (h *Handler) handleAuth(w http.ResponseWriter, r *http.Request) {
-	if h.authStore == nil {
-		writeJSON(w, http.StatusConflict, ErrorResponse{
-			Error: "authentication is not available (no auth store configured)",
-		})
-		return
-	}
-
-	if h.engine.State() == certengine.Uninitialized {
-		writeJSON(w, http.StatusConflict, ErrorResponse{
-			Error: "ShushTLS must be initialized before configuring auth",
-		})
-		return
-	}
-
-	var req AuthRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{
-			Error: fmt.Sprintf("invalid request body: %v", err),
-		})
-		return
-	}
-
-	if req.Enabled == nil {
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{
-			Error: `"enabled" field is required`,
-		})
-		return
-	}
-
-	if *req.Enabled {
-		// Enabling auth — username and password are required.
-		if req.Username == "" || req.Password == "" {
-			writeJSON(w, http.StatusBadRequest, ErrorResponse{
-				Error: "username and password are required when enabling auth",
-			})
-			return
-		}
-		if err := h.authStore.Enable(req.Username, req.Password); err != nil {
-			h.internalError(w, "failed to enable authentication", err)
-			return
-		}
-		h.logger.Info("authentication enabled", "username", req.Username)
-		writeJSON(w, http.StatusOK, AuthResponse{
-			Enabled: true,
-			Message: "Authentication enabled.",
-		})
-	} else {
-		// Disabling auth.
-		if err := h.authStore.Disable(); err != nil {
-			h.internalError(w, "failed to disable authentication", err)
-			return
-		}
-		h.logger.Info("authentication disabled")
-		writeJSON(w, http.StatusOK, AuthResponse{
-			Enabled: false,
-			Message: "Authentication disabled.",
-		})
-	}
-}
-
-// GET /api/leaf-subject — return the default subject params for leaf certificates.
-func (h *Handler) handleGetLeafSubject(w http.ResponseWriter, r *http.Request) {
-	p := h.engine.DefaultLeafSubject()
-	writeJSON(w, http.StatusOK, p)
-}
-
-// PUT /api/leaf-subject — update the default subject params for leaf certificates.
-// Future issued certs and on-demand downloads use these O, OU, C, L, ST values; CN is always the primary SAN.
-func (h *Handler) handleSetLeafSubject(w http.ResponseWriter, r *http.Request) {
-	if h.engine.State() == certengine.Uninitialized {
-		writeJSON(w, http.StatusConflict, ErrorResponse{
-			Error: "ShushTLS must be initialized before setting leaf subject",
-		})
-		return
-	}
-	var p certengine.LeafSubjectParams
-	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{
-			Error: fmt.Sprintf("invalid request body: %v", err),
-		})
-		return
-	}
-	if err := h.engine.SetDefaultLeafSubject(p); err != nil {
-		h.internalError(w, "failed to save leaf subject", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, h.engine.DefaultLeafSubject())
-}
-
-// POST /api/service-cert — designate an existing certificate as the service cert.
-func (h *Handler) handleSetServiceCert(w http.ResponseWriter, r *http.Request) {
-	if h.engine.State() == certengine.Uninitialized {
-		writeJSON(w, http.StatusConflict, ErrorResponse{
-			Error: "ShushTLS must be initialized first",
-		})
-		return
-	}
-
-	var req SetServiceCertRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{
-			Error: fmt.Sprintf("invalid request body: %v", err),
-		})
-		return
-	}
-
-	if req.PrimarySAN == "" {
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{
-			Error: "primary_san is required",
-		})
-		return
-	}
-
-	if err := certengine.ValidateSAN(req.PrimarySAN); err != nil {
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{
-			Error: fmt.Sprintf("invalid primary_san: %v", err),
-		})
-		return
-	}
-
-	if err := h.engine.DesignateServiceCert(req.PrimarySAN); err != nil {
-		h.logger.Error("failed to set service cert", "error", err)
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{
-			Error: err.Error(),
-		})
-		return
-	}
-
-	leaf := h.engine.ServiceCert()
-	info := leafInfo(leaf)
-	info.IsService = true
-
-	h.logger.Info("service certificate changed", "primarySAN", req.PrimarySAN)
-
-	writeJSON(w, http.StatusOK, SetServiceCertResponse{
-		Cert:    info,
-		Message: "Service certificate updated. New certificate is active immediately.",
-	})
-}
-
 // --- Root CA install helpers ---
 
 // InstallPlatform describes an available install script endpoint.
@@ -625,37 +363,6 @@ type InstallPlatform struct {
 	Platform string `json:"platform"`
 	Endpoint string `json:"endpoint"`
 	Example  string `json:"example"`
-}
-
-// GET /api/ca/install — summary of available platform install scripts.
-func (h *Handler) handleInstallIndex(w http.ResponseWriter, r *http.Request) {
-	if h.engine.CA() == nil {
-		writeJSON(w, http.StatusNotFound, ErrorResponse{
-			Error: "root CA does not exist yet — run POST /api/initialize first",
-		})
-		return
-	}
-
-	base := h.baseURL(r)
-	platforms := []InstallPlatform{
-		{
-			Platform: "macOS",
-			Endpoint: "/api/ca/install/macos",
-			Example:  fmt.Sprintf("curl -kfsSL %s/api/ca/install/macos | bash", base),
-		},
-		{
-			Platform: "Linux (Debian/Ubuntu/RHEL/Fedora)",
-			Endpoint: "/api/ca/install/linux",
-			Example:  fmt.Sprintf("curl -kfsSL %s/api/ca/install/linux | sudo bash", base),
-		},
-		{
-			Platform: "Windows (PowerShell)",
-			Endpoint: "/api/ca/install/windows",
-			Example:  fmt.Sprintf("irm -SkipCertificateCheck %s/api/ca/install/windows | iex", base),
-		},
-	}
-
-	writeJSON(w, http.StatusOK, platforms)
 }
 
 // GET /api/ca/install/macos — shell script for macOS trust store.

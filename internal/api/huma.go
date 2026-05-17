@@ -7,6 +7,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
+	"shushtls/internal/request"
 	"shushtls/internal/version"
 )
 
@@ -21,6 +22,7 @@ func (h *Handler) RegisterAPI(mux *http.ServeMux) huma.API {
 	api := humago.New(mux, cfg)
 
 	h.registerHumaStatus(api)
+	h.registerHumaJSON(api)
 
 	return api
 }
@@ -62,6 +64,21 @@ func (h *Handler) buildStatusResponse() StatusResponse {
 	}
 
 	return resp
+}
+
+// baseURLFromHeaders builds scheme://host from header values (for Huma handlers without *http.Request).
+func baseURLFromHeaders(host, xForwardedProto, xForwardedHost, forwarded string, trustProxy bool) string {
+	r := &http.Request{Host: host, Header: http.Header{}}
+	if xForwardedProto != "" {
+		r.Header.Set("X-Forwarded-Proto", xForwardedProto)
+	}
+	if xForwardedHost != "" {
+		r.Header.Set("X-Forwarded-Host", xForwardedHost)
+	}
+	if forwarded != "" {
+		r.Header.Set("Forwarded", forwarded)
+	}
+	return request.BaseURL(r, trustProxy)
 }
 
 // humaRequireAuthMiddleware returns middleware that enforces HTTP Basic auth when enabled.

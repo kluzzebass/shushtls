@@ -248,9 +248,11 @@ func TestInitialize_InvalidBody(t *testing.T) {
 		t.Fatalf("status = %d, want 400\nbody: %s", w.Code, w.Body.String())
 	}
 
-	resp := decodeJSON[ErrorResponse](t, w)
-	if resp.Error == "" {
-		t.Error("error message should not be empty")
+	resp := decodeJSON[struct {
+		Detail string `json:"detail"`
+	}](t, w)
+	if resp.Detail == "" {
+		t.Error("problem detail should not be empty")
 	}
 }
 
@@ -807,11 +809,6 @@ func TestInitialize_WrongMethod(t *testing.T) {
 	allow := w.Header().Get("Allow")
 	if allow != "POST" {
 		t.Errorf("Allow = %q, want POST", allow)
-	}
-
-	ct := w.Header().Get("Content-Type")
-	if ct != "application/json" {
-		t.Errorf("Content-Type = %q, want application/json", ct)
 	}
 }
 
