@@ -550,8 +550,8 @@ func TestGetCert_EmptySAN(t *testing.T) {
 	mux := serveMux(h)
 
 	w := doRequest(t, mux, "GET", "/api/certificates/", "")
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", w.Code)
+	if w.Code != http.StatusNotFound && w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 404 or 400", w.Code)
 	}
 }
 
@@ -616,7 +616,7 @@ func TestLeafSubject_PutUninitialized(t *testing.T) {
 
 // --- Error response format ---
 
-func TestErrorResponse_IsJSON(t *testing.T) {
+func TestErrorResponse_IsProblemJSON(t *testing.T) {
 	h, _ := newTestHandler(t)
 	mux := serveMux(h)
 
@@ -626,13 +626,15 @@ func TestErrorResponse_IsJSON(t *testing.T) {
 	}
 
 	ct := w.Header().Get("Content-Type")
-	if ct != "application/json" {
-		t.Errorf("error Content-Type = %q, want application/json", ct)
+	if !strings.Contains(ct, "application/problem+json") {
+		t.Errorf("error Content-Type = %q, want application/problem+json", ct)
 	}
 
-	resp := decodeJSON[ErrorResponse](t, w)
-	if resp.Error == "" {
-		t.Error("error message should not be empty")
+	resp := decodeJSON[struct {
+		Detail string `json:"detail"`
+	}](t, w)
+	if resp.Detail == "" {
+		t.Error("problem detail should not be empty")
 	}
 }
 
@@ -760,6 +762,7 @@ func TestInstallScripts_UseRequestHost(t *testing.T) {
 	// Use a custom Host header to verify scripts embed it.
 	req := httptest.NewRequest("GET", "/api/ca/install/macos", nil)
 	req.Host = "nas.local:8443"
+	req.Header.Set("Host", "nas.local:8443")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -781,6 +784,7 @@ func TestInstallScripts_XForwardedProto(t *testing.T) {
 	// Behind proxy: X-Forwarded-Proto=https means scripts should use https:// in URLs.
 	req := httptest.NewRequest("GET", "/api/ca/install/macos", nil)
 	req.Host = "shushtls.example.com"
+	req.Header.Set("Host", "shushtls.example.com")
 	req.Header.Set("X-Forwarded-Proto", "https")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)

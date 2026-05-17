@@ -36,6 +36,8 @@ func TestRegisterAPI_OpenAPI(t *testing.T) {
 		"/api/initialize",
 		"/api/certificates",
 		"/api/leaf-subject",
+		"/api/ca/root.pem",
+		"/api/certificates/{san}",
 	} {
 		if doc.Paths[path] == nil {
 			t.Errorf("paths missing %s", path)

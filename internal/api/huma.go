@@ -11,8 +11,7 @@ import (
 	"shushtls/internal/version"
 )
 
-// RegisterAPI wires the Huma API on mux and registers migrated operations.
-// Additional routes remain on registerLegacy until their issues land.
+// RegisterAPI wires the Huma API on mux and registers all REST operations.
 func (h *Handler) RegisterAPI(mux *http.ServeMux) huma.API {
 	cfg := huma.DefaultConfig("ShushTLS API", version.Version)
 	cfg.DocsPath = "/api/docs"
@@ -23,6 +22,7 @@ func (h *Handler) RegisterAPI(mux *http.ServeMux) huma.API {
 
 	h.registerHumaStatus(api)
 	h.registerHumaJSON(api)
+	h.registerHumaBinary(api)
 
 	return api
 }
