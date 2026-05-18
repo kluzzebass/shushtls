@@ -103,18 +103,21 @@ func (h *Handler) humaInitialize(_ context.Context, input *initializeInput) (*in
 	}}, nil
 }
 
+type listCertsInput struct {
+	Fields string `query:"fields" doc:"Set to basic for the legacy list shape without cert metadata"`
+}
+
 type listCertsOutput struct {
 	Body []LeafCertInfo
 }
 
-func (h *Handler) humaListCerts(_ context.Context, _ *struct{}) (*listCertsOutput, error) {
+func (h *Handler) humaListCerts(_ context.Context, input *listCertsInput) (*listCertsOutput, error) {
 	items := h.engine.ListCerts()
+	basic := input != nil && input.Fields == "basic"
 
 	infos := make([]LeafCertInfo, 0, len(items))
 	for _, item := range items {
-		info := leafInfoFromItem(item)
-		info.IsService = item.PrimarySAN == h.engine.ServiceHost()
-		infos = append(infos, info)
+		infos = append(infos, h.leafCertInfoFromItem(item, basic))
 	}
 
 	return &listCertsOutput{Body: infos}, nil
@@ -165,8 +168,7 @@ func (h *Handler) humaIssueCert(_ context.Context, input *issueCertInput) (*issu
 		return nil, huma.Error500InternalServerError("certificate issuance failed — check server logs for details")
 	}
 
-	info := leafInfoFromItem(item)
-	info.IsService = item.PrimarySAN == h.engine.ServiceHost()
+	info := h.leafCertInfoFromItem(item, false)
 
 	h.logger.Info("certificate issued", "primarySAN", item.PrimarySAN)
 	return &issueCertOutput{Body: IssueCertResponse{

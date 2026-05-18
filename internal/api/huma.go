@@ -82,9 +82,7 @@ func (h *Handler) buildStatusResponse() StatusResponse {
 	}
 
 	for _, item := range h.engine.ListCerts() {
-		info := leafInfoFromItem(item)
-		info.IsService = item.PrimarySAN == h.engine.ServiceHost()
-		resp.Certs = append(resp.Certs, info)
+		resp.Certs = append(resp.Certs, h.leafCertInfoFromItem(item, false))
 	}
 
 	return resp

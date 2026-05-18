@@ -86,11 +86,18 @@ type CACertInfo struct {
 
 // LeafCertInfo describes a leaf certificate in API responses.
 type LeafCertInfo struct {
-	PrimarySAN string   `json:"primary_san"`
-	DNSNames   []string `json:"dns_names"`
-	NotBefore  string   `json:"not_before"`
-	NotAfter   string   `json:"not_after"`
-	IsService  bool     `json:"is_service" doc:"True if this certificate secures the ShushTLS UI/API (set via POST /api/service-cert); false for user-issued leaf certificates."`
+	PrimarySAN         string   `json:"primary_san"`
+	DNSNames           []string `json:"dns_names"`
+	NotBefore          string   `json:"not_before"`
+	NotAfter           string   `json:"not_after"`
+	IsService          bool     `json:"is_service" doc:"True if this certificate secures the ShushTLS UI/API (set via POST /api/service-cert); false for user-issued leaf certificates."`
+	CommonName         string   `json:"common_name,omitempty"`
+	Serial             string   `json:"serial,omitempty"`
+	SHA256Fingerprint  string   `json:"sha256_fingerprint,omitempty"`
+	KeyAlgorithm       string   `json:"key_algorithm,omitempty"`
+	SignatureAlgorithm string   `json:"signature_algorithm,omitempty"`
+	KeyUsage           []string `json:"key_usage,omitempty"`
+	ExtendedKeyUsage   []string `json:"extended_key_usage,omitempty"`
 }
 
 // InitializeResponse is the JSON body for POST /api/initialize.

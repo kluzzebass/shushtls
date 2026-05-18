@@ -509,6 +509,64 @@ func TestListCerts_Empty(t *testing.T) {
 	}
 }
 
+func TestListCerts_EnrichedMetadata(t *testing.T) {
+	h, engine := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	if _, err := engine.IssueCert([]string{"nas.example.com"}, nil); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+
+	w := doRequest(t, mux, "GET", "/api/certificates", "")
+	var certs []LeafCertInfo
+	if err := json.NewDecoder(w.Body).Decode(&certs); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(certs) < 2 {
+		t.Fatalf("expected at least 2 certs, got %d", len(certs))
+	}
+
+	var nas *LeafCertInfo
+	for i := range certs {
+		if certs[i].PrimarySAN == "nas.example.com" {
+			nas = &certs[i]
+			break
+		}
+	}
+	if nas == nil {
+		t.Fatal("nas.example.com not in list")
+	}
+	if nas.CommonName == "" || nas.Serial == "" || nas.SHA256Fingerprint == "" {
+		t.Errorf("missing enriched fields: %+v", nas)
+	}
+	if nas.KeyAlgorithm != "ECDSA-P256" {
+		t.Errorf("key_algorithm = %q, want ECDSA-P256", nas.KeyAlgorithm)
+	}
+	if len(nas.ExtendedKeyUsage) < 2 {
+		t.Errorf("extended_key_usage = %v, want ServerAuth and ClientAuth", nas.ExtendedKeyUsage)
+	}
+}
+
+func TestListCerts_BasicFields(t *testing.T) {
+	h, engine := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	if _, err := engine.IssueCert([]string{"nas.example.com"}, nil); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+
+	w := doRequest(t, mux, "GET", "/api/certificates?fields=basic", "")
+	var certs []LeafCertInfo
+	if err := json.NewDecoder(w.Body).Decode(&certs); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for _, c := range certs {
+		if c.Serial != "" || c.SHA256Fingerprint != "" {
+			t.Errorf("basic list should omit metadata, got serial=%q fingerprint=%q", c.Serial, c.SHA256Fingerprint)
+		}
+	}
+}
+
 func TestListCerts_AfterIssuance(t *testing.T) {
 	h, engine := newInitializedHandler(t)
 	mux := serveMux(h)
