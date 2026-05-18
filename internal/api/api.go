@@ -90,7 +90,7 @@ type LeafCertInfo struct {
 	DNSNames   []string `json:"dns_names"`
 	NotBefore  string   `json:"not_before"`
 	NotAfter   string   `json:"not_after"`
-	IsService  bool     `json:"is_service"`
+	IsService  bool     `json:"is_service" doc:"True if this certificate secures the ShushTLS UI/API (set via POST /api/service-cert); false for user-issued leaf certificates."`
 }
 
 // InitializeResponse is the JSON body for POST /api/initialize.

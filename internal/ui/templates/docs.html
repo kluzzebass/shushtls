@@ -107,6 +107,7 @@
 </table>
 <p>Certificate subject defaults (O, OU, C, L, ST) can be set in <a href="/settings">Settings</a> or via <code>GET/PUT /api/leaf-subject</code>. By default CN is the primary hostname; override per cert with <code>common_name</code> on <code>POST /api/certificates</code> (e.g. CockroachDB <code>node</code> or <code>root</code> while keeping a DNS SAN).</p>
 <p><code>{primary_san}</code> is the first DNS name (e.g. <code>nas.example.com</code> or <code>*.example.com</code>). For wildcards use <code>%2A</code> in the URL. Use <code>not_after</code> from the list to plan re-issuance.</p>
+<p>Each certificate object includes <code>is_service</code>: <code>true</code> if this is the certificate ShushTLS serves on its own HTTPS endpoint (managed via <code>POST /api/service-cert</code>); <code>false</code> for user-issued leaf certificates.</p>
 
 <h3>Example: issue and download</h3>
 <pre><code># BASE = your ShushTLS URL (e.g. https://shushtls.local:8443)
