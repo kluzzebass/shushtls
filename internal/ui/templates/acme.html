@@ -38,6 +38,23 @@
 <p>To inspect the ACME directory:</p>
 <pre><code>curl -sS {{.BaseURL}}/acme/directory | jq .</code></pre>
 
+<h2>What&rsquo;s supported (RFC 8555 directory)</h2>
+<p>The directory lists only the endpoints ShushTLS implements. Omissions are intentional for a home/LAN CA, not bugs.</p>
+<table>
+  <thead>
+    <tr><th>Directory field</th><th>Status</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>newNonce</code></td><td>Implemented</td><td>Replay protection for POST requests.</td></tr>
+    <tr><td><code>newAccount</code></td><td>Implemented</td><td>Register an ACME account (JWS-authenticated).</td></tr>
+    <tr><td><code>newOrder</code></td><td>Implemented</td><td>Start certificate issuance; challenges are auto-validated.</td></tr>
+    <tr><td><code>newAuthz</code></td><td>Not implemented</td><td>Pre-authorization is unnecessary because challenges always succeed once an order is created.</td></tr>
+    <tr><td><code>revokeCert</code></td><td>Not implemented</td><td>On a trusted LAN, &ldquo;revocation&rdquo; is re-issue under the same SAN (or stop using the old cert). No CRL/OCSP.</td></tr>
+    <tr><td><code>keyChange</code></td><td>Not implemented</td><td>Account key rotation is low value when the LAN is already trusted and compromise implies broader access.</td></tr>
+  </tbody>
+</table>
+<p>If a stricter client refuses to proceed without omitted fields, use the <a href="/docs#api">REST API</a> or file an issue.</p>
+
 <h2 id="cert-manager">Using with cert-manager</h2>
 <p>
   ShushTLS marks ACME challenges valid without contacting your cluster. That works for <strong>acme.sh</strong> and <strong>certbot</strong>, which post a response and trust the server.
