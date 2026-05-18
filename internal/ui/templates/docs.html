@@ -122,6 +122,14 @@ curl -sS -X POST "$BASE/api/certificates" \
 curl -sS -o bundle.tar -u user:pass "$BASE/api/certificates/$SAN?type=tar"
 tar -x -f bundle.tar</code></pre>
 <p>Errors use RFC 9457 <code>application/problem+json</code> (<code>title</code>, <code>status</code>, <code>detail</code>). Common statuses: 400 bad request, 401 auth required, 404 not found, 409 not initialized.</p>
+
+<h3 id="acme-endpoint">ACME endpoint</h3>
+<p>Certificate automation via ACME (certbot, acme.sh, cert-manager) uses a separate protocol from the REST API above.</p>
+<ul>
+  <li><strong>Directory URL:</strong> <code>https://&lt;your-host&gt;/acme/directory</code> (same host and port as this UI; use your real hostname in place of <code>localhost</code>).</li>
+  <li><strong>Setup and clients:</strong> see the <a href="/acme">ACME page</a> for directory discovery, acme.sh, and certbot examples.</li>
+  <li><strong>cert-manager:</strong> read <a href="/acme#cert-manager">Using with cert-manager</a> before wiring a ClusterIssuer — HTTP-01 self-check often blocks internal names even though ShushTLS accepts all challenges.</li>
+</ul>
 </section>
 
 <section id="maintenance">

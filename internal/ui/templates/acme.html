@@ -38,5 +38,67 @@
 <p>To inspect the ACME directory:</p>
 <pre><code>curl -sS {{.BaseURL}}/acme/directory | jq .</code></pre>
 
+<h2 id="cert-manager">Using with cert-manager</h2>
+<p>
+  ShushTLS marks ACME challenges valid without contacting your cluster. That works for <strong>acme.sh</strong> and <strong>certbot</strong>, which post a response and trust the server.
+  <strong>cert-manager is different:</strong> before it tells the ACME server to validate, it runs its own HTTP-01 self-check — a GET to <code>http://{dnsName}/.well-known/acme-challenge/{token}</code> from inside the cluster.
+  For internal names (<code>*.svc.cluster.local</code>, bare hostnames like <code>root</code>, etc.) that self-check usually fails (no DNS, no ingress). ShushTLS would accept the challenge, but cert-manager never asks — the Certificate stays <code>Pending</code>.
+</p>
+<p><strong>Practical options (easiest first):</strong></p>
+<ol>
+  <li><strong>REST API CronJob</strong> — skip ACME; fetch a fresh cert with <code>GET /api/certificates/{san}?format=k8s-tls</code> and <code>kubectl apply -f -</code> (see manifest below).</li>
+  <li><strong>DNS-01 webhook solver</strong> — cert-manager with a permissive DNS webhook (no propagation wait). Not bundled with ShushTLS today; track as a follow-up if you need native ACME inside Kubernetes.</li>
+  <li><strong>Make HTTP-01 self-check pass</strong> — ingress controller plus DNS rewrite so challenge URLs resolve to cert-manager’s solver (heavy for home/lab).</li>
+</ol>
+
+<h3>Example: CronJob via REST API</h3>
+<p>Replace <code>SHUSHTLS_URL</code>, credentials, SAN, and namespace. Requires the ShushTLS root CA trusted by the cluster or <code>curl -k</code> (not shown).</p>
+<pre><code>apiVersion: v1
+kind: Secret
+metadata:
+  name: shushtls-api-auth
+  namespace: default
+type: Opaque
+stringData:
+  user: admin
+  password: change-me
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: shushtls-cert-refresh
+  namespace: default
+spec:
+  schedule: "0 3 * * 0"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: refresh
+              image: curlimages/curl:8.5.0
+              command:
+                - /bin/sh
+                - -ec
+                - |
+                  curl -fsS -u "$(cat /auth/user):$(cat /auth/password)" \
+                    "${SHUSHTLS_URL}/api/certificates/${CERT_SAN}?format=k8s-tls" \
+                  | kubectl apply -f -
+              env:
+                - name: SHUSHTLS_URL
+                  value: "https://shushtls.default.svc:8443"
+                - name: CERT_SAN
+                  value: "my-service.example.local"
+              volumeMounts:
+                - name: auth
+                  mountPath: /auth
+                  readOnly: true
+          volumes:
+            - name: auth
+              secret:
+                secretName: shushtls-api-auth</code></pre>
+<p>The CronJob container image must include <code>kubectl</code> or use an init pattern; swap in an image that has both <code>curl</code> and <code>kubectl</code> for production.</p>
+
 {{end}}
 {{end}}
