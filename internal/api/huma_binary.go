@@ -1,8 +1,6 @@
 package api
 
 import (
-	"archive/tar"
-	"archive/zip"
 	"context"
 	"crypto/x509"
 	"encoding/pem"
@@ -63,7 +61,9 @@ func (h *Handler) humaCACert(_ context.Context, _ *struct{}) (*huma.StreamRespon
 
 type getCertBundleInput struct {
 	SAN             string `path:"san" doc:"Primary SAN (hostname) of the certificate"`
-	Type            string `query:"type" doc:"Bundle format: tar (default) or zip"`
+	Type            string `query:"type" doc:"Archive format: tar (default) or zip (ignored when format=k8s-tls)"`
+	Names           string `query:"names" doc:"Entry names: san (default, includes SAN-prefixed cert/key) or generic (cert.pem, key.pem, ca.pem, chain.pem)"`
+	Format          string `query:"format" doc:"Output format: archive (default) or k8s-tls (Kubernetes Secret YAML)"`
 	Host            string `header:"Host"`
 	XForwardedProto string `header:"X-Forwarded-Proto"`
 	XForwardedHost  string `header:"X-Forwarded-Host"`
@@ -80,17 +80,26 @@ func (h *Handler) humaGetCertBundle(_ context.Context, input *getCertBundleInput
 		return nil, huma.Error400BadRequest(fmt.Sprintf("invalid SAN: %v", err))
 	}
 
-	which := input.Type
-	if which == "" {
-		which = "tar"
+	bundleType := input.Type
+	if bundleType == "" {
+		bundleType = "tar"
 	}
-	if which != "zip" && which != "tar" {
-		return nil, huma.Error400BadRequest("use type=zip or type=tar to download cert+key bundle (separate cert/key downloads are not supported)")
+	names := input.Names
+	if names == "" {
+		names = "san"
+	}
+	if err := validateBundleParams(input.Format, names, bundleType); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
 	}
 
 	leaf := h.engine.GetCert(san)
 	if leaf == nil {
 		return nil, huma.Error404NotFound(fmt.Sprintf("no certificate found for %q", san))
+	}
+
+	ca := h.engine.CA()
+	if ca == nil {
+		return nil, huma.Error404NotFound("root CA does not exist yet — run POST /api/initialize first")
 	}
 
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw})
@@ -100,29 +109,31 @@ func (h *Handler) humaGetCertBundle(_ context.Context, input *getCertBundleInput
 		return nil, huma.Error500InternalServerError("failed to export private key for bundle — check server logs for details")
 	}
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})
+	caPEM := rootCAPEM(ca)
 	base := certengine.SanitizeSAN(san)
 
-	entries := []struct {
-		name string
-		data []byte
-	}{
-		{base + ".cert.pem", certPEM},
-		{base + ".key.pem", keyPEM},
+	if input.Format == "k8s-tls" {
+		yaml := renderK8sTLSSecret(san, certPEM, keyPEM, caPEM)
+		return &huma.StreamResponse{
+			Body: func(ctx huma.Context) {
+				ctx.SetStatus(http.StatusOK)
+				ctx.SetHeader("Content-Type", "application/yaml")
+				ctx.SetHeader("Content-Disposition", fmt.Sprintf("attachment; filename=%q", k8sSecretName(san)+"-tls.yaml"))
+				_, _ = ctx.BodyWriter().Write(yaml)
+			},
+		}, nil
 	}
 
-	switch which {
+	files := buildBundleFiles(san, certPEM, keyPEM, caPEM, names)
+
+	switch bundleType {
 	case "tar":
 		return &huma.StreamResponse{
 			Body: func(ctx huma.Context) {
 				ctx.SetStatus(http.StatusOK)
 				ctx.SetHeader("Content-Type", "application/x-tar")
 				ctx.SetHeader("Content-Disposition", fmt.Sprintf("attachment; filename=%q", base+".tar"))
-				tw := tar.NewWriter(ctx.BodyWriter())
-				for _, entry := range entries {
-					_ = tw.WriteHeader(&tar.Header{Name: entry.name, Mode: 0644, Size: int64(len(entry.data))})
-					_, _ = tw.Write(entry.data)
-				}
-				_ = tw.Close()
+				_ = writeTarBundle(ctx.BodyWriter(), files)
 			},
 		}, nil
 	case "zip":
@@ -131,12 +142,7 @@ func (h *Handler) humaGetCertBundle(_ context.Context, input *getCertBundleInput
 				ctx.SetStatus(http.StatusOK)
 				ctx.SetHeader("Content-Type", "application/zip")
 				ctx.SetHeader("Content-Disposition", fmt.Sprintf("attachment; filename=%q", base+".zip"))
-				zw := zip.NewWriter(ctx.BodyWriter())
-				for _, entry := range entries {
-					fw, _ := zw.Create(entry.name)
-					_, _ = fw.Write(entry.data)
-				}
-				_ = zw.Close()
+				_ = writeZipBundle(ctx.BodyWriter(), files)
 			},
 		}, nil
 	default:

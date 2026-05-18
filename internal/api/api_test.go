@@ -568,8 +568,8 @@ func TestGetCert_DownloadZip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("zip.NewReader: %v", err)
 		}
-		if len(zr.File) != 2 {
-			t.Fatalf("zip has %d files, want 2", len(zr.File))
+		if len(zr.File) != 4 {
+			t.Fatalf("zip has %d files, want 4 (cert, key, ca, chain)", len(zr.File))
 		}
 		names := make(map[string]bool)
 		for _, f := range zr.File {
@@ -596,10 +596,73 @@ func TestGetCert_DownloadZip(t *testing.T) {
 			}
 		}
 		base := certengine.SanitizeSAN("nas.example.com")
-		if !names[base+".cert.pem"] || !names[base+".key.pem"] {
-			t.Errorf("zip entries = %v, want %q and %q", names, base+".cert.pem", base+".key.pem")
+		for _, want := range []string{base + ".cert.pem", base + ".key.pem", "ca.pem", "chain.pem"} {
+			if !names[want] {
+				t.Errorf("zip missing %q, entries = %v", want, names)
+			}
 		}
 	}
+}
+
+func TestGetCert_BundleGenericNames(t *testing.T) {
+	h, engine := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	if _, err := engine.IssueCert([]string{"nas.example.com"}, nil); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+
+	w := doRequest(t, mux, "GET", "/api/certificates/nas.example.com?names=generic", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	names := tarEntryNames(t, w.Body.Bytes())
+	for _, want := range []string{"cert.pem", "key.pem", "ca.pem", "chain.pem"} {
+		if !names[want] {
+			t.Errorf("tar missing %q, got %v", want, names)
+		}
+	}
+}
+
+func TestGetCert_K8sTLSFormat(t *testing.T) {
+	h, engine := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	if _, err := engine.IssueCert([]string{"nas.example.com"}, nil); err != nil {
+		t.Fatalf("IssueCert: %v", err)
+	}
+
+	w := doRequest(t, mux, "GET", "/api/certificates/nas.example.com?format=k8s-tls", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200\n%s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "yaml") {
+		t.Errorf("Content-Type = %q, want yaml", ct)
+	}
+	body := w.Body.String()
+	for _, needle := range []string{"kind: Secret", "kubernetes.io/tls", "tls.crt:", "tls.key:", "ca.crt:"} {
+		if !strings.Contains(body, needle) {
+			t.Errorf("yaml missing %q", needle)
+		}
+	}
+}
+
+func tarEntryNames(t *testing.T, tarData []byte) map[string]bool {
+	t.Helper()
+	tr := tar.NewReader(bytes.NewReader(tarData))
+	names := make(map[string]bool)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("tar.Next: %v", err)
+		}
+		names[hdr.Name] = true
+	}
+	return names
 }
 
 func TestGetCert_InvalidType(t *testing.T) {
@@ -615,6 +678,10 @@ func TestGetCert_InvalidType(t *testing.T) {
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("type=%q: status = %d, want 400", typ, w.Code)
 		}
+	}
+	w := doRequest(t, mux, "GET", "/api/certificates/nas.example.com?format=bogus", "")
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("format=bogus: status = %d, want 400", w.Code)
 	}
 }
 

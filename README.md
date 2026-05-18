@@ -110,7 +110,7 @@ As certificate validity periods get shorter (see [Certificate longevity](#certif
 |--------|------|------|-------------|
 | GET | `/api/certificates` | no | List all issued certificates (JSON). |
 | POST | `/api/certificates` | yes | Register a certificate (SAN config). Body: `{"dns_names": ["host.example.com", "*.example.com"]}`. Idempotent. The actual cert and key are generated on download (GET). |
-| GET | `/api/certificates/{primary_san}` | yes | Download cert+key bundle. Use `?type=tar` (default) or `?type=zip`. Tar works on systems without unzip (e.g. Synology DSM). |
+| GET | `/api/certificates/{primary_san}` | yes | Download bundle (`?type=tar` default, or `zip`). Includes `ca.pem` and `chain.pem`. `?names=generic` uses `cert.pem`/`key.pem`. `?format=k8s-tls` returns Kubernetes Secret YAML. |
 | GET | `/api/ca/root.pem` | no | Download root CA certificate (PEM). |
 
 `{primary_san}` is the first DNS name in the certificate (e.g. `nas.example.com` or `*.example.com`). For wildcards, the path uses the literal `*` (URL-encode as `%2A` if needed).

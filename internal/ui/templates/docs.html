@@ -99,7 +99,7 @@
   <tbody>
     <tr><td>GET</td><td><code>/api/certificates</code></td><td>no</td><td>List all issued certificates (JSON).</td></tr>
     <tr><td>POST</td><td><code>/api/certificates</code></td><td>yes</td><td>Issue a cert. Body: <code>{"dns_names": ["host.example.com"]}</code>. Idempotent.</td></tr>
-    <tr><td>GET</td><td><code>/api/certificates/{primary_san}</code></td><td>yes</td><td>Download cert+key bundle. Use <code>?type=tar</code> (default) or <code>?type=zip</code>. Tar works on systems without unzip (e.g. Synology DSM).</td></tr>
+    <tr><td>GET</td><td><code>/api/certificates/{primary_san}</code></td><td>yes</td><td>Download bundle: <code>?type=tar</code> (default) or <code>zip</code>; includes <code>ca.pem</code> and <code>chain.pem</code>. <code>?names=generic</code> uses <code>cert.pem</code>/<code>key.pem</code>. <code>?format=k8s-tls</code> returns a Kubernetes <code>Secret</code> YAML.</td></tr>
     <tr><td>GET</td><td><code>/api/ca/root.pem</code></td><td>no</td><td>Download root CA (PEM).</td></tr>
     <tr><td>GET</td><td><code>/api/leaf-subject</code></td><td>yes</td><td>Default subject (O, OU, C, L, ST) for leaf certs (JSON).</td></tr>
     <tr><td>PUT</td><td><code>/api/leaf-subject</code></td><td>yes</td><td>Update default subject. Body: <code>{"organization": "My Org", ...}</code> (all optional).</td></tr>
