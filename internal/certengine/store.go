@@ -130,8 +130,10 @@ func (s *Store) SaveCert(leaf *LeafCert) error {
 	keyPath := filepath.Join(dir, leafKeyFile)
 	certPath := filepath.Join(dir, leafCertFile)
 
-	if err := writeKey(keyPath, leaf.Key); err != nil {
-		return fmt.Errorf("save key for %s: %w", san, err)
+	if leaf.Key != nil {
+		if err := writeKey(keyPath, leaf.Key); err != nil {
+			return fmt.Errorf("save key for %s: %w", san, err)
+		}
 	}
 	if err := writeCert(certPath, leaf.Raw); err != nil {
 		return fmt.Errorf("save cert for %s: %w", san, err)
@@ -146,19 +148,23 @@ func (s *Store) LoadCert(primarySAN string) (*LeafCert, error) {
 	keyPath := filepath.Join(dir, leafKeyFile)
 	certPath := filepath.Join(dir, leafCertFile)
 
-	if !fileExists(keyPath) || !fileExists(certPath) {
+	if !fileExists(certPath) {
 		return nil, nil
+	}
+
+	raw, cert, err := readCert(certPath)
+	if err != nil {
+		return nil, fmt.Errorf("load cert for %s: %w", primarySAN, err)
+	}
+
+	if !fileExists(keyPath) {
+		return &LeafCert{Cert: cert, Raw: raw}, nil
 	}
 
 	key, err := readKey(keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("load key for %s: %w", primarySAN, err)
 	}
-	raw, cert, err := readCert(certPath)
-	if err != nil {
-		return nil, fmt.Errorf("load cert for %s: %w", primarySAN, err)
-	}
-
 	if err := validateKeyMatchesCert(key, cert); err != nil {
 		return nil, fmt.Errorf("key/cert mismatch for %s: %w", primarySAN, err)
 	}

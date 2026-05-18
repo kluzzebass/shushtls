@@ -96,6 +96,9 @@ func (h *Handler) humaGetCertBundle(_ context.Context, input *getCertBundleInput
 	if leaf == nil {
 		return nil, huma.Error404NotFound(fmt.Sprintf("no certificate found for %q", san))
 	}
+	if leaf.Key == nil {
+		return nil, huma.Error400BadRequest("private key not available — certificate was signed from a CSR; keep the key that created the CSR")
+	}
 
 	ca := h.engine.CA()
 	if ca == nil {

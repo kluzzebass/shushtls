@@ -1,6 +1,7 @@
 package certengine
 
 import (
+	"crypto/x509"
 	"fmt"
 	"sort"
 	"time"
@@ -206,6 +207,58 @@ func (e *Engine) IssueCert(dnsNames []string, subjectOverride *LeafSubjectParams
 	}
 	e.configs[primarySAN] = expanded
 	return &CertListItem{PrimarySAN: primarySAN, DNSNames: expanded}, nil
+}
+
+// IssueCSR signs a PEM-encoded CSR and stores the certificate (no private key).
+func (e *Engine) IssueCSR(pemData []byte) (*LeafCert, error) {
+	if e.ca == nil {
+		return nil, fmt.Errorf("cannot sign CSR: root CA does not exist (run Initialize first)")
+	}
+
+	csr, err := ParseCSRPEM(pemData)
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateCSR(csr); err != nil {
+		return nil, err
+	}
+
+	certDER, err := e.ca.SignCSR(csr)
+	if err != nil {
+		return nil, err
+	}
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		return nil, fmt.Errorf("parse signed certificate: %w", err)
+	}
+
+	dnsNames := cert.DNSNames
+	if len(dnsNames) == 0 && cert.Subject.CommonName != "" {
+		dnsNames = []string{cert.Subject.CommonName}
+	}
+	if len(dnsNames) == 0 {
+		return nil, fmt.Errorf("signed certificate has no DNS names")
+	}
+	for _, name := range dnsNames {
+		if err := ValidateSAN(name); err != nil {
+			return nil, fmt.Errorf("invalid dns_name in CSR: %w", err)
+		}
+	}
+
+	primarySAN := dnsNames[0]
+	leaf := &LeafCert{Cert: cert, Raw: certDER}
+
+	expanded := expandWildcardSANs(dnsNames)
+	if err := e.store.SaveSANConfig(primarySAN, expanded); err != nil {
+		return nil, fmt.Errorf("save SAN config for %s: %w", primarySAN, err)
+	}
+	if err := e.store.SaveCert(leaf); err != nil {
+		return nil, fmt.Errorf("save certificate for %s: %w", primarySAN, err)
+	}
+
+	e.certs[primarySAN] = leaf
+	delete(e.configs, primarySAN)
+	return leaf, nil
 }
 
 // GetCert returns a certificate for the given primary SAN for download.

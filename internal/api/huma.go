@@ -19,6 +19,7 @@ func (h *Handler) RegisterAPI(mux *http.ServeMux) huma.API {
 	cfg.SchemasPath = "/api/schemas"
 
 	api := humago.New(mux, cfg)
+	api.UseMiddleware(h.issueCertCSRMiddleware(api))
 
 	h.registerHumaStatus(api)
 	h.registerHumaJSON(api)

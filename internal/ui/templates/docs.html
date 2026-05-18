@@ -98,7 +98,7 @@
   </thead>
   <tbody>
     <tr><td>GET</td><td><code>/api/certificates</code></td><td>no</td><td>List all issued certificates (JSON).</td></tr>
-    <tr><td>POST</td><td><code>/api/certificates</code></td><td>yes</td><td>Issue a cert. Body: <code>{"dns_names": ["host.example.com"]}</code>. Idempotent.</td></tr>
+    <tr><td>POST</td><td><code>/api/certificates</code></td><td>yes</td><td>Issue a cert (JSON body, default) or sign a CSR (<code>Content-Type: application/pkcs10</code> or PEM). JSON: <code>{"dns_names": ["host.example.com"]}</code>. CSR returns signed cert PEM only.</td></tr>
     <tr><td>GET</td><td><code>/api/certificates/{primary_san}</code></td><td>yes</td><td>Download bundle: <code>?type=tar</code> (default) or <code>zip</code>; includes <code>ca.pem</code> and <code>chain.pem</code>. <code>?names=generic</code> uses <code>cert.pem</code>/<code>key.pem</code>. <code>?format=k8s-tls</code> returns a Kubernetes <code>Secret</code> YAML.</td></tr>
     <tr><td>GET</td><td><code>/api/ca/root.pem</code></td><td>no</td><td>Download root CA (PEM).</td></tr>
     <tr><td>GET</td><td><code>/api/leaf-subject</code></td><td>yes</td><td>Default subject (O, OU, C, L, ST) for leaf certs (JSON).</td></tr>
@@ -109,7 +109,7 @@
 <p><code>{primary_san}</code> is the first DNS name (e.g. <code>nas.example.com</code> or <code>*.example.com</code>). For wildcards use <code>%2A</code> in the URL. Use <code>not_after</code> from the list to plan re-issuance.</p>
 <p>Each certificate object includes <code>is_service</code>: <code>true</code> if this is the certificate ShushTLS serves on its own HTTPS endpoint (managed via <code>POST /api/service-cert</code>); <code>false</code> for user-issued leaf certificates.</p>
 
-<h3>Example: issue and download</h3>
+<h3>Example: issue with JSON (recommended)</h3>
 <pre><code># BASE = your ShushTLS URL (e.g. https://shushtls.local:8443)
 # SAN = primary name (e.g. nas.example.com)
 
@@ -122,6 +122,15 @@ curl -sS -X POST "$BASE/api/certificates" \
 # Use type=tar for systems without unzip (e.g. Synology)
 curl -sS -o bundle.tar -u user:pass "$BASE/api/certificates/$SAN?type=tar"
 tar -x -f bundle.tar</code></pre>
+
+<h3>Example: sign an existing CSR</h3>
+<p>When the private key never leaves your device (TPM, HSM, workload-generated key):</p>
+<pre><code>curl -sS -X POST "$BASE/api/certificates" \
+  -H "Content-Type: application/pkcs10" \
+  --data-binary @request.csr \
+  -u user:pass -o signed.pem</code></pre>
+<p>Response is the signed leaf certificate PEM only (no private key). Profile (KU/EKU, algorithms) follows the <a href="#cert-profile">certificate profile</a>, not extensions requested in the CSR.</p>
+
 <p>Errors use RFC 9457 <code>application/problem+json</code> (<code>title</code>, <code>status</code>, <code>detail</code>). Common statuses: 400 bad request, 401 auth required, 404 not found, 409 not initialized.</p>
 
 <h3 id="constrained-trust">Trusting the CA from constrained environments</h3>
