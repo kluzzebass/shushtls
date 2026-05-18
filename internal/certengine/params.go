@@ -76,9 +76,10 @@ const (
 )
 
 // LeafSubjectParams holds optional subject fields for leaf certificates.
-// Zero values are replaced with defaults via WithDefaults(). Used for
-// O, OU, C, L, ST in the certificate subject; CN is always the primary SAN.
+// Zero values are replaced with defaults via WithDefaults(). CommonName
+// defaults to dnsNames[0] when empty at issuance time.
 type LeafSubjectParams struct {
+	CommonName         string `json:"common_name,omitempty"`
 	Organization       string `json:"organization,omitempty"`
 	OrganizationalUnit string `json:"organizational_unit,omitempty"`
 	Country            string `json:"country,omitempty"`

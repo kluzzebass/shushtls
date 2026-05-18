@@ -101,8 +101,9 @@ type InitializeResponse struct {
 
 // IssueCertRequest is the JSON body for POST /api/certificates.
 type IssueCertRequest struct {
-	DNSNames []string                   `json:"dns_names"`
-	Subject  *certengine.LeafSubjectParams `json:"subject,omitempty"` // optional override for this cert
+	DNSNames   []string                      `json:"dns_names"`
+	CommonName string                        `json:"common_name,omitempty" doc:"Subject CN; defaults to the first dns_name"`
+	Subject    *certengine.LeafSubjectParams `json:"subject,omitempty" doc:"Optional O/OU/C/L/ST override for this cert only"`
 }
 
 // IssueCertResponse is the JSON body for POST /api/certificates.

@@ -141,6 +141,12 @@ Request body:
 {"dns_names": ["nas.example.com", "*.example.com"]}
 ```
 
+Optional per-cert subject override:
+
+```json
+{"dns_names": ["cockroachdb.example"], "common_name": "node"}
+```
+
 Success (200) response:
 
 ```json
@@ -197,7 +203,7 @@ Configure your ACME client with the directory URL: `https://<your-shushtls-host>
 
 ## Certificate subject defaults
 
-After initialization, you can set default subject fields (Organization, OU, Country, Locality, State/Province) for issued leaf certificates in **Settings**. The common name (CN) is always the primary hostname. These defaults apply to all newly issued and on-demand certificates.
+After initialization, you can set default subject fields (Organization, OU, Country, Locality, State/Province) for issued leaf certificates in **Settings**. CN defaults to the primary hostname; pass `"common_name"` on `POST /api/certificates` to override per cert (e.g. `"node"` for CockroachDB while keeping a DNS SAN). These defaults apply to all newly issued and on-demand certificates unless overridden per request.
 
 ## Optional auth
 

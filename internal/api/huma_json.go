@@ -128,6 +128,20 @@ type issueCertOutput struct {
 	Body IssueCertResponse
 }
 
+func issueCertSubjectOverride(req *IssueCertRequest) *certengine.LeafSubjectParams {
+	if req.CommonName == "" && req.Subject == nil {
+		return nil
+	}
+	p := certengine.LeafSubjectParams{}
+	if req.Subject != nil {
+		p = *req.Subject
+	}
+	if req.CommonName != "" {
+		p.CommonName = req.CommonName
+	}
+	return &p
+}
+
 func (h *Handler) humaIssueCert(_ context.Context, input *issueCertInput) (*issueCertOutput, error) {
 	if h.engine.CA() == nil {
 		return nil, huma.Error409Conflict("root CA does not exist — run POST /api/initialize first")
@@ -145,7 +159,7 @@ func (h *Handler) humaIssueCert(_ context.Context, input *issueCertInput) (*issu
 		}
 	}
 
-	item, err := h.engine.IssueCert(req.DNSNames, req.Subject)
+	item, err := h.engine.IssueCert(req.DNSNames, issueCertSubjectOverride(&req))
 	if err != nil {
 		h.logger.Error("certificate issuance failed", "error", err)
 		return nil, huma.Error500InternalServerError("certificate issuance failed — check server logs for details")

@@ -51,7 +51,7 @@ func IssueCertificateWithValidity(ca *CACert, dnsNames []string, validity time.D
 }
 
 // IssueCertificateWithValidityAndSubject is like IssueCertificateWithValidity but
-// uses the given subject params for O, OU, C, L, ST; CN is always the primary SAN.
+// uses the given subject params for CN, O, OU, C, L, ST. CN defaults to dnsNames[0].
 func IssueCertificateWithValidityAndSubject(ca *CACert, dnsNames []string, validity time.Duration, subject LeafSubjectParams) (*LeafCert, error) {
 	if len(dnsNames) == 0 {
 		return nil, fmt.Errorf("at least one DNS name is required")
@@ -91,9 +91,13 @@ func IssueCertificateWithValidityAndSubject(ca *CACert, dnsNames []string, valid
 	}
 	ski := sha256.Sum256(spki.PublicKey.Bytes)
 
-	// Build subject from params; CN is always the primary SAN.
+	cn := subject.CommonName
+	if cn == "" {
+		cn = dnsNames[0]
+	}
+
 	name := pkix.Name{
-		CommonName: dnsNames[0],
+		CommonName: cn,
 	}
 	if subject.Organization != "" {
 		name.Organization = []string{subject.Organization}

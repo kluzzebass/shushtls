@@ -879,6 +879,24 @@ func TestLeafCert_SubjectParams(t *testing.T) {
 	}
 }
 
+func TestIssueCertificate_CustomCommonName(t *testing.T) {
+	e := initEngine(t)
+	subject := LeafSubjectParams{
+		CommonName:   "node",
+		Organization: "Acme Labs",
+	}
+	leaf, err := IssueCertificateWithValidityAndSubject(e.CA(), []string{"cockroachdb.example"}, LeafCertValidity, subject)
+	if err != nil {
+		t.Fatalf("IssueCertificateWithValidityAndSubject: %v", err)
+	}
+	if leaf.Cert.Subject.CommonName != "node" {
+		t.Errorf("CN = %q, want node", leaf.Cert.Subject.CommonName)
+	}
+	if len(leaf.Cert.DNSNames) == 0 || leaf.Cert.DNSNames[0] != "cockroachdb.example" {
+		t.Errorf("DNSNames = %v, want cockroachdb.example first", leaf.Cert.DNSNames)
+	}
+}
+
 // --- Store tests ---
 
 func TestStore_HasCert(t *testing.T) {

@@ -1,8 +1,10 @@
 package api
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"io"
@@ -372,6 +374,101 @@ func TestIssueCert_Wildcard(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("wildcard cert missing bare domain, SANs = %v", resp.Cert.DNSNames)
+	}
+}
+
+func TestIssueCert_CustomCommonName(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "POST", "/api/certificates",
+		`{"dns_names":["cockroachdb.example"],"common_name":"node"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200\nbody: %s", w.Code, w.Body.String())
+	}
+
+	w = doRequest(t, mux, "GET", "/api/certificates/cockroachdb.example?type=tar", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("download: status = %d, want 200", w.Code)
+	}
+
+	cn := certCNFromTar(t, w.Body.Bytes(), "cockroachdb.example")
+	if cn != "node" {
+		t.Errorf("Subject CN = %q, want node", cn)
+	}
+}
+
+func TestIssueCert_DefaultCommonName(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "POST", "/api/certificates",
+		`{"dns_names":["nas.example.com"]}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	w = doRequest(t, mux, "GET", "/api/certificates/nas.example.com?type=tar", "")
+	cn := certCNFromTar(t, w.Body.Bytes(), "nas.example.com")
+	if cn != "nas.example.com" {
+		t.Errorf("Subject CN = %q, want nas.example.com", cn)
+	}
+}
+
+func TestIssueCert_SubjectOverrideNotGlobal(t *testing.T) {
+	h, _ := newInitializedHandler(t)
+	mux := serveMux(h)
+
+	w := doRequest(t, mux, "PUT", "/api/leaf-subject",
+		`{"organization":"Global Org","country":"NO"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT leaf-subject: status = %d", w.Code)
+	}
+
+	w = doRequest(t, mux, "POST", "/api/certificates",
+		`{"dns_names":["db.internal"],"common_name":"root","subject":{"organization":"Per Cert Org"}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("POST certificates: status = %d", w.Code)
+	}
+
+	w = doRequest(t, mux, "GET", "/api/leaf-subject", "")
+	var defaults certengine.LeafSubjectParams
+	if err := json.Unmarshal(w.Body.Bytes(), &defaults); err != nil {
+		t.Fatalf("decode leaf-subject: %v", err)
+	}
+	if defaults.Organization != "Global Org" || defaults.Country != "NO" {
+		t.Errorf("global leaf-subject changed: %+v", defaults)
+	}
+}
+
+func certCNFromTar(t *testing.T, tarData []byte, primarySAN string) string {
+	t.Helper()
+	tr := tar.NewReader(bytes.NewReader(tarData))
+	want := certengine.SanitizeSAN(primarySAN) + ".cert.pem"
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			t.Fatalf("cert %q not found in tar", want)
+		}
+		if err != nil {
+			t.Fatalf("tar.Next: %v", err)
+		}
+		if hdr.Name != want {
+			continue
+		}
+		data, err := io.ReadAll(tr)
+		if err != nil {
+			t.Fatalf("read tar entry: %v", err)
+		}
+		block, _ := pem.Decode(data)
+		if block == nil || block.Type != "CERTIFICATE" {
+			t.Fatal("tar entry is not a certificate PEM")
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			t.Fatalf("parse certificate: %v", err)
+		}
+		return cert.Subject.CommonName
 	}
 }
 
