@@ -5,7 +5,6 @@ import (
 	"crypto/elliptic"
 	"crypto/x509"
 	"fmt"
-	"strings"
 
 	"shushtls/internal/certengine"
 )
@@ -125,7 +124,7 @@ func extKeyUsageStrings(usages []x509.ExtKeyUsage) []string {
 		case x509.ExtKeyUsageMicrosoftKernelCodeSigning:
 			out = append(out, "MicrosoftKernelCodeSigning")
 		default:
-			out = append(out, strings.TrimPrefix(u.String(), "ExtKeyUsage"))
+			out = append(out, fmt.Sprintf("Unknown(%d)", int(u)))
 		}
 	}
 	return out
