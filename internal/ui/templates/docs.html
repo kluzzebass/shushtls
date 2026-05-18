@@ -34,6 +34,25 @@
   </tbody>
 </table>
 <p>The app may be updated over time to use the shorter validity as these dates take effect. Plan to re-issue leaf certs before they expire; the <a href="/certificates">Certificates</a> page shows validity for each cert.</p>
+
+<h3 id="cert-profile">Certificate profile (leaf certs)</h3>
+<p>Every leaf certificate ShushTLS issues (UI, REST API, or ACME) uses the same X.509 profile. Integrators can rely on these values without issuing a throwaway cert.</p>
+<table>
+  <thead>
+    <tr><th>Property</th><th>Value</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Public key</td><td>ECDSA on curve P-256 (secp256r1 / prime256v1)</td></tr>
+    <tr><td>Signature algorithm</td><td>ECDSA with SHA-256 (<code>ecdsa-with-SHA256</code>)</td></tr>
+    <tr><td>Key usage</td><td><code>digitalSignature</code> only (no <code>keyEncipherment</code> — ECDSA certs must not include it)</td></tr>
+    <tr><td>Extended key usage</td><td><strong>Both</strong> <code>serverAuth</code> and <code>clientAuth</code> on every leaf — suitable for TLS servers, mTLS clients, or both without extra configuration</td></tr>
+    <tr><td>Validity (issued)</td><td>Maximum allowed by CA/Browser Forum SC-081 at generation time (see table above). On-demand certs are generated fresh on each bundle download with the current limit.</td></tr>
+    <tr><td>Subject CN</td><td>First <code>dns_names</code> entry by default; override with <code>common_name</code> on <code>POST /api/certificates</code></td></tr>
+    <tr><td>Subject O, OU, C, L, ST</td><td>From <a href="/settings">Settings</a> / <code>GET /api/leaf-subject</code> defaults, or per-cert <code>subject</code> on <code>POST /api/certificates</code></td></tr>
+    <tr><td>DNS SANs</td><td>All names in <code>dns_names</code>, plus automatic expansion: requesting <code>*.example.com</code> also adds <code>example.com</code> if not already listed</td></tr>
+    <tr><td>Basic constraints</td><td>CA=false</td></tr>
+  </tbody>
+</table>
 </section>
 
 <section id="bootstrap">
