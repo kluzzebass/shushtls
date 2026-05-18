@@ -124,6 +124,25 @@ curl -sS -o bundle.tar -u user:pass "$BASE/api/certificates/$SAN?type=tar"
 tar -x -f bundle.tar</code></pre>
 <p>Errors use RFC 9457 <code>application/problem+json</code> (<code>title</code>, <code>status</code>, <code>detail</code>). Common statuses: 400 bad request, 401 auth required, 404 not found, 409 not initialized.</p>
 
+<h3 id="constrained-trust">Trusting the CA from constrained environments</h3>
+<p>OS installers at <a href="/trust">Install CA</a> are the primary UX. When the trust store cannot be modified (containers, cert-manager, bootstrap before install), fetch and pin the root CA explicitly.</p>
+<ol>
+  <li><strong>Bootstrap fetch</strong> (first contact only — server cert is self-signed until the root is trusted):
+    <pre><code>curl --insecure https://&lt;host&gt;/api/ca/root.pem -o ca.pem</code></pre>
+  </li>
+  <li><strong>Verify fingerprint</strong> against the SHA-256 shown on <a href="/trust">Install CA</a> (or <code>GET /api/status</code> → <code>root_ca.fingerprint</code>).</li>
+  <li><strong>Subsequent calls</strong>: <code>curl --cacert ca.pem https://&lt;host&gt;/api/...</code></li>
+</ol>
+<p><strong>cert-manager</strong> ClusterIssuer <code>spec.acme.caBundle</code>:</p>
+<pre><code>caBundle: $(base64 -w0 &lt; ca.pem)</code></pre>
+<p><strong>Docker</strong> (minimal image):</p>
+<pre><code>COPY ca.pem /etc/ssl/certs/shushtls-root.pem
+ENV SSL_CERT_FILE=/etc/ssl/certs/shushtls-root.pem</code></pre>
+<p><strong>Kubernetes</strong> mount as ConfigMap:</p>
+<pre><code>kubectl create configmap shushtls-ca --from-file=ca.crt=ca.pem
+# volumeMount: mountPath: /etc/ssl/certs/shushtls-ca.crt, subPath: ca.crt
+# env: SSL_CERT_FILE=/etc/ssl/certs/shushtls-ca.crt</code></pre>
+
 <h3 id="acme-endpoint">ACME endpoint</h3>
 <p>Certificate automation via ACME (certbot, acme.sh, cert-manager) uses a separate protocol from the REST API above.</p>
 <ul>

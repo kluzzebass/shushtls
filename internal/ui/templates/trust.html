@@ -32,6 +32,14 @@
 
 <p>Or <a href="/api/ca/root.pem">download the root CA (PEM)</a> and install it manually.</p>
 
+{{if .RootCA}}
+<article>
+  <header><strong>Root CA fingerprint (SHA-256)</strong></header>
+  <p>Compare out-of-band before trusting <code>curl --cacert</code> in scripts or mounting the PEM in containers:</p>
+  <pre><code>{{.RootCA.Fingerprint}}</code></pre>
+</article>
+{{end}}
+
 <h2>Manual installation</h2>
 
 <details>
