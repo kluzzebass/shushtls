@@ -115,6 +115,12 @@ func (s *Store) CACertPath() string {
 	return filepath.Join(s.dir, caDirName, caCertFile)
 }
 
+// Dir returns the root state directory. Other packages (e.g. acme)
+// persist their own files alongside the CA store using this path.
+func (s *Store) Dir() string {
+	return s.dir
+}
+
 // --- Leaf certificate operations (generic, keyed by primary SAN) ---
 
 // SaveCert writes a leaf certificate's key and cert to disk, keyed by

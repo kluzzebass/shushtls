@@ -8,12 +8,16 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"shushtls/internal/certengine"
 )
+
+const accountsFile = "acme-accounts.json"
 
 const acmePathPrefix = "/acme/"
 
@@ -25,6 +29,7 @@ type Server struct {
 	engine    *certengine.Engine
 	baseURL   BaseURLFunc
 	logger    *slog.Logger
+	stateDir string
 	nonces   map[string]bool
 	accounts   map[string]*account
 	accountsByURL map[string]*account
@@ -33,6 +38,15 @@ type Server struct {
 	challs   map[string]*challenge
 	certs    map[string][]byte
 	mu       sync.Mutex
+}
+
+// persistedAccount mirrors the in-memory `account` struct with exported
+// fields for JSON marshaling. The on-disk representation is a slice of
+// these; keyID/url uniqueness is enforced when reloading.
+type persistedAccount struct {
+	Key string `json:"key"`
+	URL string `json:"url"`
+	JWK []byte `json:"jwk"`
 }
 
 type account struct {
@@ -66,14 +80,21 @@ type challenge struct {
 }
 
 // NewServer creates an ACME server. baseURL returns the scheme://host for each request.
+//
+// Account registrations are persisted to <stateDir>/acme-accounts.json so they
+// survive process restarts. Without this, every restart would force every
+// ACME client (e.g. traefik) to re-register, because the kid it cached
+// would no longer be recognized — leading to repeated "unknown account"
+// failures on every renew attempt.
 func NewServer(engine *certengine.Engine, baseURL BaseURLFunc, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Server{
+	s := &Server{
 		engine:   engine,
 		baseURL:  baseURL,
 		logger:   logger,
+		stateDir: engine.Store().Dir(),
 		nonces:       make(map[string]bool),
 		accounts:     make(map[string]*account),
 		accountsByURL: make(map[string]*account),
@@ -82,6 +103,63 @@ func NewServer(engine *certengine.Engine, baseURL BaseURLFunc, logger *slog.Logg
 		challs:   make(map[string]*challenge),
 		certs:    make(map[string][]byte),
 	}
+	if err := s.loadAccounts(); err != nil {
+		s.logger.Warn("acme: failed to load persisted accounts", "error", err)
+	}
+	return s
+}
+
+// accountsPath returns the on-disk path for the persisted account map.
+func (s *Server) accountsPath() string {
+	return filepath.Join(s.stateDir, accountsFile)
+}
+
+// loadAccounts reads previously persisted account registrations. A
+// missing file is not an error — it just means no clients have
+// registered yet.
+func (s *Server) loadAccounts() error {
+	data, err := os.ReadFile(s.accountsPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var entries []persistedAccount
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range entries {
+		acct := &account{key: e.Key, url: e.URL, jwk: e.JWK}
+		s.accounts[acct.key] = acct
+		s.accountsByURL[acct.url] = acct
+	}
+	s.logger.Info("acme: loaded persisted accounts", "count", len(entries))
+	return nil
+}
+
+// saveAccounts writes the current account map atomically (write to .tmp,
+// rename) so a partial write can't corrupt the file. Caller must NOT
+// hold s.mu — saveAccounts acquires it.
+func (s *Server) saveAccounts() error {
+	s.mu.Lock()
+	entries := make([]persistedAccount, 0, len(s.accounts))
+	for _, acct := range s.accounts {
+		entries = append(entries, persistedAccount{Key: acct.key, URL: acct.url, JWK: acct.jwk})
+	}
+	s.mu.Unlock()
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := s.accountsPath()
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // Register adds ACME routes to the mux under /acme/.
@@ -145,6 +223,12 @@ func (s *Server) handleNewAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	acctURL := acct.url
 	s.mu.Unlock()
+
+	if !exists {
+		if err := s.saveAccounts(); err != nil {
+			s.logger.Warn("acme: failed to persist account", "kid", acctURL, "error", err)
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Location", acctURL)
