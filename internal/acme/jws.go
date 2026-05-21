@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -50,7 +52,7 @@ func (s *Server) parseJWS(r *http.Request, expectedKid string) (*jwsPayload, err
 	used := s.nonces[hdr.Nonce]
 	if used {
 		s.mu.Unlock()
-		return nil, err
+		return nil, errors.New("nonce already used")
 	}
 	s.nonces[hdr.Nonce] = true
 	s.mu.Unlock()
@@ -86,7 +88,7 @@ func (s *Server) parseJWS(r *http.Request, expectedKid string) (*jwsPayload, err
 		acct := s.accountsByURL[kid]
 		s.mu.Unlock()
 		if acct == nil || len(acct.jwk) == 0 {
-			return nil, err
+			return nil, fmt.Errorf("unknown account: %s", kid)
 		}
 		var storedJWK jose.JSONWebKey
 		if err := json.Unmarshal(acct.jwk, &storedJWK); err != nil {
@@ -95,7 +97,7 @@ func (s *Server) parseJWS(r *http.Request, expectedKid string) (*jwsPayload, err
 		key = storedJWK.Key
 	}
 	if key == nil {
-		return nil, err
+		return nil, errors.New("JWS has neither embedded JWK nor recognized kid")
 	}
 	if _, err := sig.Verify(key); err != nil {
 		return nil, err
