@@ -225,8 +225,28 @@ func (s *Server) handleNewAccount(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	if !exists {
+		// Persist before claiming success: an HTTP 201 with an account
+		// URL the server can't actually look up later (because the save
+		// silently failed) leaves clients with a phantom registration
+		// — they cache the URL, retry against it, and get "unknown
+		// account" forever. Roll back the in-memory state on failure
+		// and surface a 500 so the client treats it as a transient
+		// registration error and retries.
 		if err := s.saveAccounts(); err != nil {
-			s.logger.Warn("acme: failed to persist account", "kid", acctURL, "error", err)
+			s.logger.Error("acme: failed to persist new account, rolling back", "kid", acctURL, "error", err)
+			s.mu.Lock()
+			// Pointer-equal guard: only roll back the account *we*
+			// inserted. A concurrent registration with the same
+			// thumbprint that happened to land between our unlock and
+			// the save returning will have its own success path and
+			// shouldn't be clobbered here.
+			if a, ok := s.accounts[keyID]; ok && a == acct {
+				delete(s.accounts, keyID)
+				delete(s.accountsByURL, acctURL)
+			}
+			s.mu.Unlock()
+			s.acmeError(w, "failed to persist account registration", "serverInternal", http.StatusInternalServerError)
+			return
 		}
 	}
 
