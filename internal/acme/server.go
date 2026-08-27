@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,12 @@ import (
 )
 
 const accountsFile = "acme-accounts.json"
+
+// accountsLockFile guards the read-merge-write in saveAccounts. It's a
+// separate file because saveAccounts publishes by rename, and a lock
+// held on the accounts file itself would be attached to the inode that
+// rename replaces — leaving concurrent writers locking different inodes.
+const accountsLockFile = "acme-accounts.json.lock"
 
 const acmePathPrefix = "/acme/"
 
@@ -114,19 +121,35 @@ func (s *Server) accountsPath() string {
 	return filepath.Join(s.stateDir, accountsFile)
 }
 
-// loadAccounts reads previously persisted account registrations. A
-// missing file is not an error — it just means no clients have
-// registered yet.
-func (s *Server) loadAccounts() error {
-	data, err := os.ReadFile(s.accountsPath())
+// accountsLockPath returns the on-disk path for the accounts lockfile.
+func (s *Server) accountsLockPath() string {
+	return filepath.Join(s.stateDir, accountsLockFile)
+}
+
+// readAccountsFile reads the persisted account slice. A missing file is
+// not an error — it just means no clients have registered yet.
+func readAccountsFile(path string) ([]persistedAccount, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return nil, nil
 		}
-		return err
+		return nil, err
 	}
 	var entries []persistedAccount
 	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+// loadAccounts reads previously persisted account registrations into
+// memory. No lock is taken: saveAccounts publishes by rename, so a
+// concurrent save is atomic from a reader's point of view — we either
+// see the whole old file or the whole new one.
+func (s *Server) loadAccounts() error {
+	entries, err := readAccountsFile(s.accountsPath())
+	if err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -140,21 +163,63 @@ func (s *Server) loadAccounts() error {
 	return nil
 }
 
-// saveAccounts writes the current account map atomically (write to .tmp,
+// saveAccounts folds the in-memory registrations into whatever is
+// already on disk and writes the result atomically (write to .tmp,
 // rename) so a partial write can't corrupt the file. Caller must NOT
 // hold s.mu — saveAccounts acquires it.
+//
+// The merge is deliberate: more than one ShushTLS process can share a
+// state directory, and each holds its own account map. Serializing just
+// that map over the shared file would silently delete every account the
+// sibling registered since we last read the file. Those clients keep
+// presenting the kid they cached and get "unknown account" forever after
+// the next restart, with nothing logged anywhere — the save succeeded,
+// it just wrote the wrong thing.
+//
+// Read-merge-write runs under an exclusive lockfile so two processes
+// can't interleave and reintroduce the same lost update. Accounts are
+// only ever added here; nothing in the server deactivates one, so the
+// merge never needs to express a deletion.
 func (s *Server) saveAccounts() error {
+	unlock, err := lockFile(s.accountsLockPath())
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	path := s.accountsPath()
+	onDisk, err := readAccountsFile(path)
+	if err != nil {
+		return err
+	}
+
+	// Keyed by account URL rather than key thumbprint: the URL is what a
+	// client caches as its kid and what parseJWS resolves against, and
+	// two processes serving different base URLs can hold the same key
+	// under different URLs. Keying by thumbprint would collapse those
+	// two into one and strand whichever client lost.
+	merged := make(map[string]persistedAccount, len(onDisk))
+	for _, e := range onDisk {
+		merged[e.URL] = e
+	}
 	s.mu.Lock()
-	entries := make([]persistedAccount, 0, len(s.accounts))
 	for _, acct := range s.accounts {
-		entries = append(entries, persistedAccount{Key: acct.key, URL: acct.url, JWK: acct.jwk})
+		merged[acct.url] = persistedAccount{Key: acct.key, URL: acct.url, JWK: acct.jwk}
 	}
 	s.mu.Unlock()
+
+	entries := make([]persistedAccount, 0, len(merged))
+	for _, e := range merged {
+		entries = append(entries, e)
+	}
+	// Stable order so the file doesn't churn between otherwise identical
+	// saves, which would make real changes harder to spot in a diff.
+	sort.Slice(entries, func(i, j int) bool { return entries[i].URL < entries[j].URL })
+
 	data, err := json.MarshalIndent(entries, "", "  ")
 	if err != nil {
 		return err
 	}
-	path := s.accountsPath()
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0600); err != nil {
 		return err
@@ -214,14 +279,20 @@ func (s *Server) handleNewAccount(w http.ResponseWriter, r *http.Request) {
 	keyID := s.jwkThumbprint(payload.Key)
 	jwkBytes, _ := json.Marshal(payload.Key)
 	base := strings.TrimSuffix(s.baseURL(r), "/")
+	// Match on the URL this server would mint, not on the key thumbprint
+	// alone. A shared state directory means our account map can contain a
+	// sibling process' registrations, whose URLs point at a base this
+	// client may not be able to reach at all (the bootstrap sidecar's
+	// loopback listener being the obvious case). Looking up by thumbprint
+	// would hand this client that unreachable URL as its kid.
+	acctURL := base + "/acme/acct/" + keyID
 	s.mu.Lock()
-	acct, exists := s.accounts[keyID]
+	acct, exists := s.accountsByURL[acctURL]
 	if !exists {
-		acct = &account{key: keyID, url: base + "/acme/acct/" + keyID, jwk: jwkBytes}
+		acct = &account{key: keyID, url: acctURL, jwk: jwkBytes}
 		s.accounts[keyID] = acct
-		s.accountsByURL[acct.url] = acct
+		s.accountsByURL[acctURL] = acct
 	}
-	acctURL := acct.url
 	s.mu.Unlock()
 
 	if !exists {
@@ -240,9 +311,14 @@ func (s *Server) handleNewAccount(w http.ResponseWriter, r *http.Request) {
 			// thumbprint that happened to land between our unlock and
 			// the save returning will have its own success path and
 			// shouldn't be clobbered here.
-			if a, ok := s.accounts[keyID]; ok && a == acct {
-				delete(s.accounts, keyID)
+			if a, ok := s.accountsByURL[acctURL]; ok && a == acct {
 				delete(s.accountsByURL, acctURL)
+				// s.accounts is keyed by thumbprint, which a sibling's
+				// entry for the same key may also occupy; only drop it
+				// if it's still pointing at the account we added.
+				if b, ok := s.accounts[keyID]; ok && b == acct {
+					delete(s.accounts, keyID)
+				}
 			}
 			s.mu.Unlock()
 			s.acmeError(w, "failed to persist account registration", "serverInternal", http.StatusInternalServerError)
