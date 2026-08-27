@@ -2,12 +2,15 @@ module shushtls
 
 go 1.25.7
 
-require golang.org/x/crypto v0.50.0
+require (
+	github.com/danielgtaylor/huma/v2 v2.38.0
+	github.com/getkin/kin-openapi v0.138.0
+	github.com/go-jose/go-jose/v4 v4.1.3
+	golang.org/x/crypto v0.50.0
+	golang.org/x/sys v0.43.0
+)
 
 require (
-	github.com/danielgtaylor/huma/v2 v2.38.0 // indirect
-	github.com/getkin/kin-openapi v0.138.0 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
@@ -18,7 +21,6 @@ require (
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/woodsbury/decimal128 v1.3.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
